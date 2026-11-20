@@ -39,8 +39,13 @@ public final class IcebergSourcePlan {
     this.filters = filters;
   }
 
-  @SuppressWarnings("unchecked")
   public static IcebergSourcePlan capture(IcebergTableSource source, RowType output) {
+    return capture(source, output, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  public static IcebergSourcePlan capture(
+      IcebergTableSource source, RowType output, boolean bounded) {
     if (!IcebergSinkAdapter.compatible() || source.getClass() != IcebergTableSource.class) {
       throw new IllegalArgumentException("unverified Iceberg source version or implementation");
     }
@@ -59,18 +64,18 @@ public final class IcebergSourcePlan {
     } catch (IOException e) {
       throw new IllegalArgumentException("cannot resolve Iceberg source", e);
     }
-    var resolved = (ResolvedSchema) get(source, "schema");
+    var schema = (ResolvedSchema) get(source, "schema");
+    var resolved = schema;
     var selected = (int[]) get(source, "projectedFields");
     if (selected != null)
       resolved =
           ResolvedSchema.of(
               java.util.Arrays.stream(selected)
-                  .mapToObj(
-                      index -> ((ResolvedSchema) get(source, "schema")).getColumns().get(index))
+                  .mapToObj(index -> schema.getColumns().get(index))
                   .toList());
     Schema projection = FlinkSchemaUtil.convert(table.schema(), resolved);
     var filters = List.copyOf((List<Expression>) get(source, "filters"));
-    validate(table, config, options, projection, filters);
+    validate(table, config, options, projection, filters, bounded);
     RowType expected = FlinkSchemaUtil.convert(projection);
     if (expected.getFieldCount() != output.getFieldCount())
       throw new IllegalArgumentException("source metadata fields are not admitted");
@@ -87,9 +92,19 @@ public final class IcebergSourcePlan {
       Map<String, String> options,
       Schema projection,
       List<Expression> filters) {
+    validate(table, configuration, options, projection, filters, false);
+  }
+
+  static void validate(
+      Table table,
+      ReadableConfig configuration,
+      Map<String, String> options,
+      Schema projection,
+      List<Expression> filters,
+      boolean bounded) {
     var conf = new FlinkReadConf(table, options, configuration);
-    if (!IcebergSinkAdapter.compatible() || !conf.streaming())
-      throw new IllegalArgumentException("only streaming discovery is admitted");
+    if (!IcebergSinkAdapter.compatible() || conf.streaming() == bounded)
+      throw new IllegalArgumentException("Iceberg scan mode must match the admitted job mode");
     if (table instanceof org.apache.iceberg.BaseMetadataTable
         || org.apache.iceberg.TableUtil.formatVersion(table) > 3)
       throw new IllegalArgumentException("metadata/unknown-format sources retain stock readers");

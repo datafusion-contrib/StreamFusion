@@ -13,6 +13,8 @@ import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
 import org.apache.iceberg.io.FileIO;
+import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.arrow.ArrowFileBatch;
 import tech.streamfusion.operator.NativeAllocator;
 import tech.streamfusion.operator.TaskOffHeapMemory;
 
@@ -179,14 +181,19 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
     }
     var readSchema = org.apache.iceberg.MetadataColumns.schemaWithRowLineage(schema);
     var selected = new Schema(projection.stream().map(readSchema::findField).toList());
-    outputType = arrowSchema(requested == null ? selected : requested, rewrite);
+    var projected = requested == null ? selected : requested;
+    var payloadType = payloadSchema(projected);
+    var fileType = arrowSchema(projected, payloadType, rewrite);
+    // Rust uses field IDs to align evolved files. SQL consumers share one layout with the
+    // stock task reader, including when Expand replaces a projected column with a NULL literal.
+    outputType = rewrite ? fileType : payloadType;
     files = new IcebergTaskFiles(io, lengths);
     try (var outputSchema = ArrowSchema.allocateNew(NativeAllocator.SHARED)) {
       if (equalitySets)
         equalityMemoryOwner = TaskOffHeapMemory.registerOwner("iceberg-read", "equality-sets");
       if (cancellation != null) cancellation.add(files);
       Data.exportSchema(
-          NativeAllocator.SHARED, outputType, NativeAllocator.DICTIONARIES, outputSchema);
+          NativeAllocator.SHARED, fileType, NativeAllocator.DICTIONARIES, outputSchema);
       try {
         handle =
             NativeIceberg.createReader(
@@ -211,10 +218,16 @@ final class IcebergNativeTaskReader implements IcebergTaskBatchReader {
   }
 
   static org.apache.arrow.vector.types.pojo.Schema arrowSchema(Schema schema, boolean rewrite) {
-    var arrow =
-        tech.streamfusion.arrow.ArrowFileBatch.schema(
-            tech.streamfusion.arrow.ArrowConversion.toArrowSchema(
-                org.apache.iceberg.flink.FlinkSchemaUtil.convert(schema)));
+    return arrowSchema(schema, payloadSchema(schema), rewrite);
+  }
+
+  private static org.apache.arrow.vector.types.pojo.Schema payloadSchema(Schema schema) {
+    return ArrowFileBatch.schema(
+        ArrowConversion.toArrowSchema(org.apache.iceberg.flink.FlinkSchemaUtil.convert(schema)));
+  }
+
+  private static org.apache.arrow.vector.types.pojo.Schema arrowSchema(
+      Schema schema, org.apache.arrow.vector.types.pojo.Schema arrow, boolean rewrite) {
     var fields = new java.util.ArrayList<org.apache.arrow.vector.types.pojo.Field>();
     for (int i = 0; i < schema.columns().size(); i++)
       fields.add(icebergField(arrow.getFields().get(i), schema.columns().get(i), rewrite));

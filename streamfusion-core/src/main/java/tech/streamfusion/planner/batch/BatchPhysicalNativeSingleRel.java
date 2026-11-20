@@ -38,12 +38,29 @@ abstract class BatchPhysicalNativeSingleRel extends SingleRel implements BatchPh
         shared ? ((BatchPhysicalNativeSingleRel) original).reuseBarrier : NativeRelDigests.nextId();
   }
 
-  final boolean allowSharedCopies() {
-    if (getInput() instanceof BatchPhysicalNativeSingleRel) {
-      if (!((BatchPhysicalNativeSingleRel) getInput()).allowSharedCopies()) return false;
-    } else if (!getInput().getInputs().isEmpty()) return false;
-    shared = true;
+  static boolean allowSharedCopiesOf(RelNode node) {
+    if (!canShareCopiesOf(node)) return false;
+    markSharedCopies(node);
     return true;
+  }
+
+  private static boolean canShareCopiesOf(RelNode node) {
+    return node.getInputs().isEmpty()
+        || (node instanceof BatchPhysicalNativeSingleRel
+                || node instanceof BatchPhysicalNativeJoin
+                || node instanceof BatchPhysicalNativeUnion
+                || node instanceof BatchPhysicalNativeShare)
+            && node.getInputs().stream().allMatch(BatchPhysicalNativeSingleRel::canShareCopiesOf);
+  }
+
+  private static void markSharedCopies(RelNode node) {
+    if (node instanceof BatchPhysicalNativeSingleRel)
+      ((BatchPhysicalNativeSingleRel) node).shared = true;
+    else if (node instanceof BatchPhysicalNativeJoin)
+      ((BatchPhysicalNativeJoin) node).markSharedCopies();
+    else if (node instanceof BatchPhysicalNativeUnion)
+      ((BatchPhysicalNativeUnion) node).markSharedCopies();
+    node.getInputs().forEach(BatchPhysicalNativeSingleRel::markSharedCopies);
   }
 
   @Override

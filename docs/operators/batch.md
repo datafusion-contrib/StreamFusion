@@ -34,8 +34,9 @@ Every supported pipeline is eligible, including standalone scalar/filter jobs,
 global reductions and sorted limits. There is no performance whitelist based on
 operator names, expression names, source representation or work above/below an
 aggregate. Each UNION ALL branch must meet the same compatibility checks.
-Optional connector substitution remains independent when computation retains
-stock Flink; see [Paimon bounded execution](../connectors/paimon.md#bounded-batch-source-and-sink).
+Optional connector substitution remains independent when computation retains stock Flink.
+See [Paimon bounded execution](../connectors/paimon.md#bounded-batch-source-and-sink)
+and [Iceberg bounded execution](../connectors/iceberg.md#bounded-batch-source-and-sink).
 
 Native execution does not guarantee a speedup. Historical complete-job comparisons
 include slower scalar, global-reduction and sorted-limit workloads; these remain
@@ -153,11 +154,12 @@ The previous trials remain in the [TPC-H evidence](../benchmarks/tpch.md).
 
 Batch physical/exec wrappers reuse the existing compiled expression and transpose
 runtime. They do not expose streaming execution nodes to Flink's batch graph
-processors. Native digests retain the single-consumer Arrow reuse barrier.
-An explicitly shared unary aggregate subplan can preserve its digest through host
-cloning and stamp the verified consumer count using the existing Arrow share
-operator. This requires native source sharing and both host reuse options; other
-subplans keep their barriers. Each branch receives its own retained buffer view.
+processors. An eligible columnar subplan that Flink explicitly reuses preserves its
+digest through host cloning. This requires native source sharing and both host reuse
+options. The Arrow share operator gives each deployed consumer a retained buffer view.
+Virtual exchange nodes stay visible to the operators that verify their distributions.
+A shared hash exchange preserves one producer even when Flink's input priorities
+require separate blocking hash partitions for its consumers.
 
 Only the perimeter transposes convert rows. UNION ALL forwards Arrow batches, and
 unchained native stages use the existing Arrow IPC serializer through Flink's
@@ -212,7 +214,9 @@ it cannot install this graph adaptation.
 Hash build state uses the existing shared native memory pool and fails on reservation
 denial; this initial DataFusion hash table does **not** spill. DataFusion nested-loop
 execution has a chunked disk-spill fallback when temporary files are available. Sort-merge input sorting
-uses the existing DataFusion external sorter. No separate pool
+uses the existing DataFusion external sorter. A composite NULL-safe hash semi-join
+with no residual predicate groups the non-preserved build keys before building its
+hash table. No separate pool
 or higher memory limit is introduced. The complete SF1 TPC-H release comparison
 now passes all 22 queries with exact rows/types, native source and compute work,
 and zero entry-transpose rows. All 22 query medians favor native; the geometric
@@ -233,8 +237,8 @@ arbitrary batch SQL or larger-data performance guarantee. See the
 - Join predicates requiring unverified JVM/string/collection representations, mixed
   keyed NULL equality, preserved-side broadcasts and external hash-table spilling.
 - Expand projections beyond references/literals, UNNEST/correlate, nested boundary types and set-operation plans outside UNION ALL.
-- Native bounded connector admission beyond the documented filesystem Parquet and
-  Paimon whitelists, including batch Iceberg substitution and other native batch sinks.
+- Native bounded connector admission beyond the documented filesystem Parquet, Paimon
+  and Iceberg whitelists.
 - Native compiled batch plans. The deployed batch planner preserves stock compilation;
   Flink 1.18 keeps its own unsupported compiled-plan behavior.
 - Python, pattern matching, async/model functions and other unrecognized interior nodes.

@@ -2,6 +2,7 @@ use crate::batch::exec::BoundedInput;
 use crate::batch::task::{bounded_context, copyable, throw_error, BoundedTask};
 use crate::*;
 use datafusion::common::{JoinSide, JoinType, NullEquality};
+use datafusion::physical_plan::aggregates::{AggregateExec, AggregateMode, PhysicalGroupBy};
 use datafusion::physical_plan::joins::utils::{ColumnIndex, JoinFilter};
 use datafusion::physical_plan::joins::{
     HashJoinExec, NestedLoopJoinExec, PartitionMode, SortMergeJoinExec,
@@ -212,6 +213,35 @@ impl JoinPlan {
                 build, probe, filter, &join_type, None,
             )?)
         } else {
+            let build = if join_type == JoinType::RightSemi
+                && filter.is_none()
+                && null_equals
+                && keys.len() > 1
+            {
+                // Existence depends only on the key. Avoid enumerating every matching build
+                // row for skewed keys, including tuples with NULLs in null-safe set operations.
+                let groups = keys
+                    .iter_mut()
+                    .enumerate()
+                    .map(|(index, (build_key, _))| {
+                        let name = format!("key_{index}");
+                        let expr =
+                            std::mem::replace(build_key, Arc::new(Column::new(&name, index)));
+                        (expr, name)
+                    })
+                    .collect();
+                let schema = build.schema();
+                Arc::new(AggregateExec::try_new(
+                    AggregateMode::Single,
+                    PhysicalGroupBy::new_single(groups),
+                    vec![],
+                    vec![],
+                    build,
+                    schema,
+                )?)
+            } else {
+                build
+            };
             Arc::new(HashJoinExec::try_new(
                 build,
                 probe,

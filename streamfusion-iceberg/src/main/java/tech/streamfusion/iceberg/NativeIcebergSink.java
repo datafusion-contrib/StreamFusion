@@ -20,7 +20,7 @@ import org.apache.iceberg.io.DataWriter;
 import org.apache.iceberg.io.FileWriterFactory;
 import tech.streamfusion.operator.ArrowBatch;
 
-/** Normal streaming sink with native encoding confined to Java-selected Parquet data files. */
+/** Iceberg sink with native encoding confined to Java-selected Parquet data files. */
 public final class NativeIcebergSink {
   private NativeIcebergSink() {}
 
@@ -41,7 +41,18 @@ public final class NativeIcebergSink {
       ReadableConfig configuration,
       Map<String, String> options,
       String uidPrefix) {
-    validate(table, configuration, options);
+    return write(input, table, loader, configuration, options, uidPrefix, false);
+  }
+
+  static DataStreamSink<Void> write(
+      DataStream<ArrowBatch> input,
+      Table table,
+      org.apache.iceberg.flink.TableLoader loader,
+      ReadableConfig configuration,
+      Map<String, String> options,
+      String uidPrefix,
+      boolean bounded) {
+    validate(table, configuration, options, bounded);
     var conf = new FlinkWriteConf(table, options, configuration);
     String schema = SchemaParser.toJson(table.schema());
     var settings =
@@ -99,6 +110,11 @@ public final class NativeIcebergSink {
 
   public static void validate(
       Table table, ReadableConfig configuration, Map<String, String> options) {
+    validate(table, configuration, options, false);
+  }
+
+  static void validate(
+      Table table, ReadableConfig configuration, Map<String, String> options, boolean bounded) {
     if (org.apache.iceberg.TableUtil.formatVersion(table) > 3) {
       throw new IllegalArgumentException("Native Iceberg format version is not verified");
     }
@@ -106,6 +122,8 @@ public final class NativeIcebergSink {
       throw new IllegalArgumentException("Native Iceberg encryption is not verified");
     }
     var conf = new FlinkWriteConf(table, options, configuration);
+    if (conf.overwriteMode() && (!bounded || conf.upsertMode()))
+      throw new IllegalArgumentException("Iceberg overwrite requires bounded non-upsert input");
     if ((!table.schema().identifierFieldIds().isEmpty() || conf.upsertMode())
         && org.apache.iceberg.TableUtil.formatVersion(table) < 2) {
       throw new IllegalArgumentException("Native keyed writes require format-v2/v3");

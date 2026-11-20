@@ -120,7 +120,7 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
       sharedConsumers.clear();
       sharedRewrites.clear();
       if (admitted && tech.streamfusion.planner.common.SourceReusePolicy.enabled(candidate))
-        countSharedAggregates(candidate, new IdentityHashMap<>());
+        countSharedInputs(candidate, new IdentityHashMap<>());
       result.add(
           admitted
                   && (!expressions.isEmpty()
@@ -328,23 +328,33 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
     RelNode result = rewriteNode(node, expressions, sorts, aggregates);
     int consumers = sharedConsumers.getOrDefault(node, 0);
     if (consumers > 1
-        && result instanceof BatchPhysicalNativeAggregate
-        && ((BatchPhysicalNativeSingleRel) result).allowSharedCopies()) {
-      result = new BatchPhysicalNativeShare(result, consumers, NativeRelDigests.nextId());
+        && result instanceof ColumnarOutput
+        && (!(result instanceof BatchPhysicalNativeExchange)
+            || ((BatchPhysicalNativeExchange) result).isHashPartitioned())
+        && BatchPhysicalNativeSingleRel.allowSharedCopiesOf(result)) {
+      if (result instanceof BatchPhysicalNativeExchange) {
+        // Keep the distribution visible to its consumers and share the producer before the shuffle.
+        if (!(result.getInput(0) instanceof BatchPhysicalNativeShare)) {
+          var share =
+              new BatchPhysicalNativeShare(result.getInput(0), consumers, NativeRelDigests.nextId());
+          result = result.copy(result.getTraitSet(), List.of(share));
+        }
+      } else {
+        result = new BatchPhysicalNativeShare(result, consumers, NativeRelDigests.nextId());
+      }
       sharedRewrites.put(node, result);
     }
     return result;
   }
 
-  private void countSharedAggregates(RelNode node, Map<RelNode, Boolean> visited) {
+  private void countSharedInputs(RelNode node, Map<RelNode, Boolean> visited) {
     if (visited.put(node, true) != null) return;
     var local = new IdentityHashMap<RelNode, Boolean>();
     for (RelNode input : node.getInputs()) {
       if (local.put(input, true) != null) {
         sharedConsumers.put(input, Integer.MIN_VALUE);
-      } else if (input instanceof BatchPhysicalGroupAggregateBase)
-        sharedConsumers.merge(input, 1, Integer::sum);
-      countSharedAggregates(input, visited);
+      } else sharedConsumers.merge(input, 1, Integer::sum);
+      countSharedInputs(input, visited);
     }
   }
 

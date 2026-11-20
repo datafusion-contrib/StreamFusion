@@ -1,4 +1,4 @@
-"""Require the identical pinned upstream streaming invocations in both engine runs."""
+"""Require the identical pinned upstream Iceberg invocations in both engine runs."""
 import sys
 import re
 from collections import Counter
@@ -26,8 +26,10 @@ def cases(directory):
             skipped.add(name)
         else:
             executed.add(name)
-    if len(executed) != 12 or len(skipped) != 8:
-        raise ValueError(f"Expected 12 streaming and 8 excluded batch cases, found {len(executed)}/{len(skipped)}")
+    expected_skips = {("testRangeDistributionPartitionColumn", 2),
+                      ("testRangeDistributionPartitionColumn", 4)}
+    if len(executed) != 18 or skipped != expected_skips:
+        raise ValueError(f"Unexpected upstream sink SQL inventory: {executed}/{skipped}")
     return executed, skipped
 
 
@@ -40,8 +42,10 @@ def source_cases(directory):
         if case.find("failure") is not None or case.find("error") is not None:
             raise ValueError(f"Failed upstream source case: {method}")
         (skipped if case.find("skipped") is not None else executed).add(method)
-    if executed != {"testWatermarkValidConfig", "testWatermarkInvalidConfig"} or len(skipped) != 5:
-        raise ValueError(f"Unexpected streaming source SQL inventory: {executed}/{skipped}")
+    expected = {"testWatermarkValidConfig", "testWatermarkInvalidConfig", "testWatermarkOptionsAscending",
+                "testWatermarkOptionsDescending", "testReadFlinkDynamicTable", "testExposeLocality", "testResiduals"}
+    if executed != expected or skipped:
+        raise ValueError(f"Unexpected upstream source SQL inventory: {executed}/{skipped}")
     return executed, skipped
 
 
@@ -128,7 +132,7 @@ def main(stock, native):
         raise ValueError("Stock/native dynamic control inventories differ")
     rewrite_cases(native)
     reports = Path(native)
-    for name, count in (("IcebergSinkAdapterTest", 1), ("NativeIcebergSinkTest", 8), ("NativeIcebergSqlTest", 14), ("NativeIcebergKeyedTest", 26), ("NativeIcebergReaderTest", 9), ("NativeIcebergTypeTest", 3), ("NativeIcebergPredicateTest", 10), ("NativeIcebergTaskMetadataTest", 4), ("NativeIcebergFloatingPredicateTest", 28), ("NativeIcebergTemporalPredicateTest", 12), ("NativeIcebergRangeTest", 2), ("NativeIcebergRangeSinkTest", 6), ("NativeIcebergSourceTest", 1), ("NativeIcebergSourceSqlTest", 2), ("NativeIcebergSourceRecoveryTest", 12), ("NativeIcebergNestedTest", 20), ("NativeIcebergNestedSqlTest", 4), ("NativeIcebergDynamicSinkTest", 8), ("NativeIcebergCapturedRecoveryTest", 12), ("NativeIcebergEncoderMemoryTest", 2), ("NativeIcebergTaskFallbackTest", 3), ("NativeIcebergEvolutionTest", 2)):
+    for name, count in (("NativeIcebergBatchSqlTest", 15), ("IcebergSinkAdapterTest", 1), ("NativeIcebergSinkTest", 8), ("NativeIcebergSqlTest", 14), ("NativeIcebergKeyedTest", 26), ("NativeIcebergReaderTest", 9), ("NativeIcebergTypeTest", 3), ("NativeIcebergPredicateTest", 10), ("NativeIcebergTaskMetadataTest", 4), ("NativeIcebergFloatingPredicateTest", 28), ("NativeIcebergTemporalPredicateTest", 12), ("NativeIcebergRangeTest", 2), ("NativeIcebergRangeSinkTest", 6), ("NativeIcebergSourceTest", 1), ("NativeIcebergSourceSqlTest", 2), ("NativeIcebergSourceRecoveryTest", 12), ("NativeIcebergNestedTest", 20), ("NativeIcebergNestedSqlTest", 4), ("NativeIcebergDynamicSinkTest", 8), ("NativeIcebergCapturedRecoveryTest", 12), ("NativeIcebergEncoderMemoryTest", 2), ("NativeIcebergTaskFallbackTest", 3), ("NativeIcebergEvolutionTest", 2)):
         root = ET.parse(reports / f"TEST-tech.streamfusion.iceberg.{name}.xml").getroot()
         if any(case.find("failure") is not None or case.find("error") is not None
                for case in root.findall("testcase")):
@@ -137,7 +141,7 @@ def main(stock, native):
                   and case.find("error") is None and case.find("skipped") is None]
         if len(passed) < count:
             raise ValueError(f"Missing native hook/readback witnesses: {name}")
-    print("Iceberg: identical 14 upstream streaming SQL and 127 range/dynamic control cases; native hook, SQL file-encoder, keyed recovery, and readback witnesses passed; 19 paired streaming rewrite cases and 54 executed SQL rewrite pairs")
+    print("Iceberg: identical 25 upstream SQL and 127 range/dynamic control cases; batch and streaming native read/write witnesses passed; 19 paired streaming rewrite cases and 54 executed SQL rewrite pairs")
 
 
 if __name__ == "__main__":
