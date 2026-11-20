@@ -48,7 +48,8 @@ public enum ExpressionKind {
   CERTIFIED_BUILTIN(44),
   ZONED_EXTRACT(45),
   COLLECTION_CAST(46),
-  DECIMAL_IF(47);
+  DECIMAL_IF(47),
+  STRING_COMPARISON(49);
 
   private final int code;
 
@@ -107,6 +108,7 @@ public enum ExpressionKind {
       case 45: return ZONED_EXTRACT;
       case 46: return COLLECTION_CAST;
       case 47: return DECIMAL_IF;
+      case 49: return STRING_COMPARISON;
       default: throw new IllegalArgumentException("Unknown ExpressionKind code: " + code);
     }
   }

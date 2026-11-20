@@ -34,6 +34,7 @@ pub(crate) mod right;
 pub(crate) mod rpad;
 pub(crate) mod split;
 pub(crate) mod split_index;
+pub(crate) mod string_comparison;
 pub(crate) mod substring;
 pub(crate) mod to_date;
 

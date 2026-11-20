@@ -13,6 +13,7 @@ import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.BitSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -31,8 +32,12 @@ import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.SqlJsonConstructorNullClause;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlSyntax;
+import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalDataStreamScan;
+import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalTableSourceScan;
+import tech.streamfusion.compat.FlinkCompat;
 import tech.streamfusion.operator.EncodedPredicate;
 import tech.streamfusion.operator.WatermarkExpression;
 import tech.streamfusion.planner.common.Admission;
@@ -207,6 +212,7 @@ final class RexExpression implements EncodedExpression {
   private boolean aliasedFunctionInput;
   private boolean skipMapKeyCaches;
   private boolean javaStringInputs;
+  private boolean pairwiseStringComparisons;
   private String jvmExecutionReason;
   private final Set<String> jvmExpressionDetails = new LinkedHashSet<>();
   private final java.util.Set<String> statefulUdfEvaluations = new java.util.HashSet<>();
@@ -255,7 +261,8 @@ final class RexExpression implements EncodedExpression {
 
   @Override
   public boolean requiresOriginalStringInputs() {
-    return writer.containsKind(KIND_CERTIFIED_BUILTIN);
+    return writer.containsKind(KIND_CERTIFIED_BUILTIN)
+        || writer.containsKind(ExpressionKind.STRING_COMPARISON.code());
   }
 
   @Override
@@ -675,8 +682,90 @@ final class RexExpression implements EncodedExpression {
     encoder.uniqueObjectConstruction=constructions[0]==1;
     encoder.watermarkAvailable = true;
     encoder.javaStringInputs = HostStringInputs.areJavaBacked(calc.getInput());
+    encoder.pairwiseStringComparisons = usesPairwiseStringComparison(calc);
     encoder.aliasedFunctionInput = JvmFunctionConversions.aliasedProducer(calc.getInput());
     return encoder;
+  }
+
+  static boolean usesPairwiseStringComparison(Calc calc) {
+    var input = calc.getInput();
+    if (!(input instanceof StreamPhysicalTableSourceScan
+        || input instanceof StreamPhysicalDataStreamScan)) {
+      return false;
+    }
+    var program = calc.getProgram();
+    var usage = new PairwiseStringUsage();
+    if ((program.getCondition() != null
+            && !comparisonPreservesCaches(program.expandLocalRef(program.getCondition()), usage))
+        || !program.getProjectList().stream()
+            .map(program::expandLocalRef)
+            .allMatch(value -> comparisonPreservesCaches(value, usage))) {
+      return false;
+    }
+    // Ordering currently falls back on these row inputs. Introduce it only when both operands
+    // already feed byte kernels in this Calc, so ordering shares their conversion work.
+    usage.orderingInputs.andNot(usage.byteKernelInputs);
+    return usage.hasComparison && usage.orderingInputs.isEmpty();
+  }
+
+  private static final class PairwiseStringUsage {
+    boolean hasComparison;
+    final BitSet orderingInputs = new BitSet();
+    final BitSet byteKernelInputs = new BitSet();
+  }
+
+  private static boolean comparisonPreservesCaches(RexNode node, PairwiseStringUsage usage) {
+    if (node instanceof RexInputRef || node instanceof RexLiteral) return true;
+    if (!(node instanceof RexCall)) return false;
+    var call = (RexCall) node;
+    int comparison = inputStringComparison(call);
+    if (comparison >= 0) {
+      usage.hasComparison = true;
+      if (comparison != ScalarOp.EQUAL && comparison != ScalarOp.NOT_EQUAL) {
+        for (RexNode operand : call.getOperands()) {
+          usage.orderingInputs.set(((RexInputRef) operand).getIndex());
+        }
+      }
+      return true;
+    }
+    var operator = call.getOperator();
+    // These built-ins traverse bytes without decoding their arguments into cached Java strings.
+    boolean readsOnlyBytes =
+        operator == SqlStdOperatorTable.CHAR_LENGTH
+            || operator == SqlStdOperatorTable.CHARACTER_LENGTH
+            || operator == SqlStdOperatorTable.POSITION;
+    if (readsOnlyBytes) {
+      for (RexNode operand : call.getOperands()) {
+        if (operand instanceof RexInputRef && isCharacter(operand)) {
+          usage.byteKernelInputs.set(((RexInputRef) operand).getIndex());
+        }
+      }
+    }
+    boolean nullCheck = call.getKind() == SqlKind.IS_NULL || call.getKind() == SqlKind.IS_NOT_NULL;
+    if (!readsOnlyBytes
+        && !nullCheck
+        && (JsonStringIdentity.containsCharacter(call.getType())
+            || FlinkCompat.scalarFunction(operator) != null
+            || call.getOperands().stream()
+                .anyMatch(arg -> JsonStringIdentity.containsCharacter(arg.getType())))) {
+      return false;
+    }
+    return call.getOperands().stream()
+        .allMatch(operand -> comparisonPreservesCaches(operand, usage));
+  }
+
+  private static int inputStringComparison(RexCall call) {
+    if (call.getOperands().size() != 2
+        || call.getOperands().stream()
+            .anyMatch(a -> !(a instanceof RexInputRef) || !isCharacter(a))) return -1;
+    var operator = call.getOperator();
+    if (operator == SqlStdOperatorTable.LESS_THAN) return ScalarOp.LESS_THAN;
+    if (operator == SqlStdOperatorTable.LESS_THAN_OR_EQUAL) return ScalarOp.LESS_OR_EQUAL;
+    if (operator == SqlStdOperatorTable.GREATER_THAN) return ScalarOp.GREATER_THAN;
+    if (operator == SqlStdOperatorTable.GREATER_THAN_OR_EQUAL) return ScalarOp.GREATER_OR_EQUAL;
+    if (operator == SqlStdOperatorTable.EQUALS) return ScalarOp.EQUAL;
+    if (operator == SqlStdOperatorTable.NOT_EQUALS) return ScalarOp.NOT_EQUAL;
+    return -1;
   }
 
   /**
@@ -1869,6 +1958,13 @@ final class RexExpression implements EncodedExpression {
       if (!database.isPresent())
         return reject("CURRENT_DATABASE requires the query database context");
       return emitStringLiteral(database.get());
+    }
+    if (pairwiseStringComparisons) {
+      int comparison = inputStringComparison(call);
+      if (comparison >= 0) {
+        add(ExpressionKind.STRING_COMPARISON.code(), comparison, 2);
+        return emit(call.getOperands().get(0)) && emit(call.getOperands().get(1));
+      }
     }
     {
       boolean switchResult0;

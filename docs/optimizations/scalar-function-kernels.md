@@ -24,6 +24,23 @@ experiments; they do not imply that the direct STRING kernel is enabled. Boolean
 ARRAY_DISTINCT, fixed binary casts, and the scale-dependent exact DOUBLE TRUNCATE helper
 remain admitted. See [current Calc coverage](../operators/calc-filter.md).
 
+## Pairwise string comparison
+
+Intersect the original Java string cache validity masks for the two operands.
+A batch with no pair of cached operands uses Arrow's Binary comparison over the
+existing buffers. When every non-null pair has both caches, compare their UTF-16
+units directly. Mixed batches dispatch per pair and write one Boolean bitmap
+in row order. The kernel specializes equality and each ordering operation once
+when the Calc is compiled. It avoids re-validating bytes and calling back into
+the generated Flink evaluator for these comparisons.
+
+The mixed-cache equality job took 181 ms, compared with 2,364 ms through the
+previous adapter and 152 ms in stock Flink. For the comparable ordering job that
+also computes both character lengths, times were 201 ms native, 223 ms on the
+previous route and 227 ms stock. See the [comparison benchmark](../benchmarks/scalar-functions-strings.md#cache-aware-string-comparison)
+for prepared-input measurements, trial ranges and the standalone costs that
+limit ordering admission.
+
 ## Proven primitive case conversion
 
 UPPER/LOWER prove a bounded primitive text producer before using the existing native kernels.

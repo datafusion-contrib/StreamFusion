@@ -1,6 +1,21 @@
 use crate::expression_protocol::{certified_op, scalar_op, CastTarget, ExpressionKind};
 use crate::*;
 use arrow::datatypes::TimeUnit;
+use streamfusion_bridge::string_cache::{is_string_cache_field, string_cache_index};
+
+const STRING_CACHE_INPUT: &str = "streamfusion.java_string_cache.input";
+
+fn expression_string_cache_position(schema: &SchemaRef, input: usize) -> Option<usize> {
+    schema.fields().iter().position(|field| {
+        is_string_cache_field(field)
+            && field
+                .metadata()
+                .get(STRING_CACHE_INPUT)
+                .and_then(|position| position.parse().ok())
+                .or_else(|| string_cache_index(field.name()))
+                == Some(input)
+    })
+}
 
 fn encoded_field_type(encoded: &str) -> DataType {
     use base64::Engine;
@@ -337,6 +352,35 @@ pub(crate) fn build_expr(
             }
             build_typed_call(schema, op, args)
         }
+        ExpressionKind::StringComparison => {
+            let left = *cursor;
+            let right = left + 1;
+            assert_eq!(child_counts[node], 2, "STRING comparison arity");
+            assert!(kinds[left..=right]
+                .iter()
+                .all(|&code| ExpressionKind::from_code(code) == Some(ExpressionKind::InputRef)));
+            *cursor += 2;
+            let operands = [payload[left] as usize, payload[right] as usize];
+            let mut columns = operands.to_vec();
+            if let [Some(left), Some(right)] =
+                operands.map(|index| expression_string_cache_position(schema, index))
+            {
+                columns.extend([left, right]);
+            }
+            let types = columns
+                .iter()
+                .map(|&index| schema.field(index).data_type().clone())
+                .collect();
+            let args = columns
+                .into_iter()
+                .map(|index| {
+                    datafusion::prelude::Expr::Column(datafusion::common::Column::new_unqualified(
+                        schema.field(index).name(),
+                    ))
+                })
+                .collect();
+            crate::flink_functions::string_comparison::function(payload[node], types).call(args)
+        }
         ExpressionKind::ZonedExtract => crate::flink_functions::calendar::zoned(
             strings[arg].as_deref().expect("calendar zone history"),
         )
@@ -400,17 +444,9 @@ pub(crate) fn build_expr(
                         &children[index]
                     {
                         let position = schema.index_of(&column.name).ok();
-                        position.and_then(|position| {
-                            schema.fields().iter().enumerate().find_map(|(i, field)| {
-                                (streamfusion_bridge::string_cache::is_string_cache_field(field)
-                                    && field
-                                        .metadata()
-                                        .get("streamfusion.java_string_cache.input")
-                                        .and_then(|value| value.parse::<usize>().ok())
-                                        == Some(position))
-                                .then(|| datafusion::prelude::col(schema.field(i).name()))
-                            })
-                        })
+                        position
+                            .and_then(|position| expression_string_cache_position(schema, position))
+                            .map(|i| datafusion::prelude::col(schema.field(i).name()))
                     } else {
                         None
                     };
@@ -2756,14 +2792,9 @@ fn indexed_schema(schema: &SchemaRef) -> SchemaRef {
             .enumerate()
             .map(|(index, field)| {
                 let mut metadata = field.metadata().clone();
-                if streamfusion_bridge::string_cache::is_string_cache_field(field) {
-                    if let Some(input) =
-                        streamfusion_bridge::string_cache::string_cache_index(field.name())
-                    {
-                        metadata.insert(
-                            "streamfusion.java_string_cache.input".into(),
-                            input.to_string(),
-                        );
+                if is_string_cache_field(field) {
+                    if let Some(input) = string_cache_index(field.name()) {
+                        metadata.insert(STRING_CACHE_INPUT.into(), input.to_string());
                     }
                 }
                 Field::new(

@@ -237,20 +237,29 @@ the existing Java/serialized string-order gate.
 
 ## String ordering {#string-ordering}
 
-General relational character-string comparisons (`<`, `<=`, `>`, `>=`) fall back, including
-inside CASE and casts. One direct comparison is proven representation-independent: both
-operands are qualified primitive ASCII PRINTF results or ASCII/NULL character literals, with
-at least one formatter. The six built-in `=`, `<>`, `<`, `<=`, `>`, `>=` comparisons then use
-native kernels, including native filters; arbitrary STRING inputs and composed consumers
-retain their existing guards. Built-in operator identity is required.
+Streaming Calc supports built-in `=` and `<>` between two direct scalar string fields from
+a row source. The same kernel supports `<`, `<=`, `>` and `>=` when both operands also feed
+the Calc's byte-based `CHAR_LENGTH`, `CHARACTER_LENGTH` or `POSITION` work. Standalone ordering
+stays in Flink because its own row-to-Arrow conversion can outweigh the kernel gain.
+The input boundary retains the original bytes and any cached Java string.
+Flink compares UTF-16 code units when both values have
+Java strings and unsigned bytes otherwise. Even valid UTF-8 can give different results
+in those two orders. A null input produces a null comparison result.
 
-Flink compares retained Java strings by UTF-16 code units,
-but serialized strings by UTF-8 bytes. These orders disagree for some supplementary Unicode
-characters. Arrow retains the UTF-8 value without the Java-representation information needed
-to select Flink's order, so admission cannot safely depend on the column's SQL type alone.
-Outside the proven formatter subset, the gate also applies to ASCII/BMP inputs and serialized
-sources because the planner cannot prove every runtime operand's representation and range. Equality and inequality
-(`=`, `<>`) remain native; this gate does not change Top-N's serialized sort order.
+Each batch uses Arrow's byte comparator when no pair has both caches. If every non-null pair
+has both caches, the native kernel compares the cached UTF-16 directly. Mixed batches select
+the representation per pair and produce a single Boolean array in row order. The comparison
+consumes the original bytes without requiring UTF-8 validation. `EXPLAIN` shows
+`pairwiseStringComparison=[true]` when this path is selected.
+
+The planner requires a Calc whose other expressions preserve its input caches. A text operation
+or user function in the same Calc can populate a cache before a comparison, so such Calcs
+retain their existing evaluation rules. Comparison operands involving casts, literals or
+computed text, comparisons downstream of other relational operators, compiled-plan ingress,
+and Top-N retain their existing rules. One established native path compares qualified primitive
+ASCII PRINTF results and ASCII/NULL character literals, with at least one formatter.
+The [release measurements](../benchmarks/scalar-functions-strings.md#cache-aware-string-comparison)
+cover both comparison kernels and complete jobs.
 
 
 ## String concatenation and hashes {#string-concatenation-and-hashes}

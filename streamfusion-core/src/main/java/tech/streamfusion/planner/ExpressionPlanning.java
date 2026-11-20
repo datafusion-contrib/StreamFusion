@@ -35,6 +35,10 @@ public final class ExpressionPlanning {
     return RexExpression.prepareCalc(calc, javaJsonInput).map(expression -> expression);
   }
 
+  public static boolean usesPairwiseStringComparison(Calc calc) {
+    return RexExpression.usesPairwiseStringComparison(calc);
+  }
+
   public static EncodedExpression encodeCalc(Calc calc) {
     return RexExpression.encodeCalc(calc);
   }

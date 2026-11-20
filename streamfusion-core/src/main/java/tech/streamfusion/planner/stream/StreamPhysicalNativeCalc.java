@@ -1,5 +1,6 @@
 package tech.streamfusion.planner.stream;
 
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
 import org.apache.calcite.plan.RelOptCluster;
@@ -270,8 +271,12 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
   }
 
   boolean requiresOriginalStringInputs() {
-    for (int kind : kinds) if (kind == 44) return true;
-    return false;
+    return usesPairwiseStringComparison()
+        || Arrays.stream(kinds).anyMatch(kind -> kind == ExpressionKind.CERTIFIED_BUILTIN.code());
+  }
+
+  boolean usesPairwiseStringComparison() {
+    return Arrays.stream(kinds).anyMatch(kind -> kind == ExpressionKind.STRING_COMPARISON.code());
   }
 
   @Override
@@ -288,6 +293,7 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
   public RelWriter explainTerms(RelWriter writer) {
     return super.explainTerms(writer)
         .itemIf("collectionRepresentation", true, preserveCollections)
+        .itemIf("pairwiseStringComparison", true, usesPairwiseStringComparison())
         .itemIf("onDemandUtf8", true, adaptiveText != null && !adaptiveText.generatedOnly)
         .itemIf("byteBackedFlinkEval", true, adaptiveText != null && adaptiveText.generatedOnly)
         .itemIf(

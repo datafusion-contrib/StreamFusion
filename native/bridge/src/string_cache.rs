@@ -62,11 +62,13 @@ impl<'a> JavaStringCacheColumn<'a> {
     }
 
     pub fn value(&self, row: usize) -> Option<&'a [u16]> {
-        if self.lists.is_null(row) {
-            return None;
-        }
+        self.lists.is_valid(row).then(|| self.units_at(row))
+    }
+
+    /// Returns the stored units. Callers that need null semantics check the list validity first.
+    pub fn units_at(&self, row: usize) -> &'a [u16] {
         let offsets = self.lists.value_offsets();
-        Some(&self.units.values()[offsets[row] as usize..offsets[row + 1] as usize])
+        &self.units.values()[offsets[row] as usize..offsets[row + 1] as usize]
     }
 }
 

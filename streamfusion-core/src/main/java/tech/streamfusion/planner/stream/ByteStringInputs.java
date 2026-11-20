@@ -41,7 +41,8 @@ final class ByteStringInputs {
     var used = new BitSet();
     if (calc.byteStringOutputs(columns, used) == null || used.isEmpty()) return root;
     input = input.withByteStringColumns(columns.stream().toArray());
-    if (calc.hasStringPassthrough()) input = input.withStringCaches();
+    if (calc.hasStringPassthrough() || calc.usesPairwiseStringComparison())
+      input = input.withStringCaches();
     return root.copy(root.getTraitSet(), List.of(input));
   }
 
@@ -84,8 +85,9 @@ final class ByteStringInputs {
     boolean preserveInputCaches =
         node instanceof StreamPhysicalArrowToRowData
             || (forwardsSchema && preserveOutputCaches)
-            || node instanceof StreamPhysicalNativeCalc && preserveOutputCaches
-                && ((StreamPhysicalNativeCalc) node).hasStringPassthrough()
+            || node instanceof StreamPhysicalNativeCalc
+                && (((StreamPhysicalNativeCalc) node).usesPairwiseStringComparison()
+                    || preserveOutputCaches && ((StreamPhysicalNativeCalc) node).hasStringPassthrough())
             || node instanceof StreamPhysicalNativeFilter && preserveOutputCaches
                 && ((StreamPhysicalNativeFilter) node).hasStringPassthrough();
     List<RelNode> inputs = new ArrayList<>(node.getInputs().size());
@@ -228,7 +230,7 @@ final class ByteStringInputs {
     int operation = kind == ExpressionKind.CALL ? payload[node] : -1;
     if (operation == ScalarOp.CONCAT || operation == ScalarOp.CONCAT_WS) {
       resultBytes.or(arguments);
-    } else if (!acceptsByteStringInput(operation)) {
+    } else if (kind != ExpressionKind.STRING_COMPARISON && !acceptsByteStringInput(operation)) {
       needed.or(arguments);
     }
     return next;
@@ -268,6 +270,7 @@ final class ByteStringInputs {
       case LIT_TEMPORAL:
       case LIT_TIMESTAMP:
       case LIT_TYPED_NULL:
+      case STRING_COMPARISON:
       case CALL:
       case CAST:
       case CAST_NARROW:
@@ -291,7 +294,9 @@ final class ByteStringInputs {
     for (int i = 0; i < children[node]; i++) {
       Expression child = visit(next, kinds, payload, children, input, used);
       if (child == null) return null;
-      if (child.byteString && !acceptsByteStringInput(operation)) return null;
+      if (child.byteString
+          && kind != ExpressionKind.STRING_COMPARISON
+          && !acceptsByteStringInput(operation)) return null;
       hasByteInput |= child.byteString;
       next = child.next;
     }

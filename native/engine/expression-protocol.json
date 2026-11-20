@@ -188,10 +188,15 @@
     {
       "name": "DECIMAL_IF",
       "code": 47
+    },
+    {
+      "name": "STRING_COMPARISON",
+      "code": 49
     }
   ],
   "reservedNodeKinds": [
-    10
+    10,
+    48
   ],
   "castTargets": [
     {
