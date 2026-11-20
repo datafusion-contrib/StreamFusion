@@ -13,7 +13,7 @@ class SharedBuildTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name) / "original build"
+        self.root = Path(self.temp.name).resolve() / "original build"
         for name in (
             "flink-1.18.1/.git/HEAD", "flink-1.18.1/mvnw",
             "flink-1.18.1/target/test-classes/QueryITCase.class",

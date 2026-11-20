@@ -12,7 +12,7 @@ RUNNER = Path(__file__).resolve().parents[2] / "bin/flink-suite.sh"
 
 class KafkaMavenTest(unittest.TestCase):
     def invoke(self, kafka_wrapper):
-        source = RUNNER.read_text()
+        source = (RUNNER.parents[1] / "dev/flink-suite/runner/prepare.sh").read_text()
         functions = source[source.index("flink_mvn() {"):source.index('mkdir -p "${SUITE_ROOT}"')]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -43,7 +43,7 @@ class KafkaMavenTest(unittest.TestCase):
             )
 
     def test_prepare_resolves_the_kafka_model_with_its_released_wrapper(self):
-        source = RUNNER.read_text()
+        source = (RUNNER.parents[1] / "dev/flink-suite/runner/prepare.sh").read_text()
         start = source.index('if [[ "${SUITE_MODE}" == "kafka" ||\n')
         end = source.index('if [[ "${SUITE_MODE}" == "paimon" ]]; then', start)
         with tempfile.TemporaryDirectory() as directory:

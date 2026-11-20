@@ -1,5 +1,11 @@
 # Upstream Flink suite
 
+`bin/flink-suite.sh` remains the stable entry point. Its configuration, preparation, execution
+and evidence-audit phases live under `dev/flink-suite/runner/` and run in the same shell, retaining
+the original variables and Maven exit status. Configuration rejects unsupported requests before
+downloads, and unsuccessful test execution still reaches the audit. Phase ownership does not
+change test selections, native-route requirements, recovery assertions or outcome inventories.
+
 ## Batch SQL development
 
 The planner factory and suite agent now install a mode-specific batch adapter.

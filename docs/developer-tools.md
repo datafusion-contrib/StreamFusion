@@ -23,6 +23,7 @@ remain maintained inputs even when they are not regular CI steps.
 | `dev/tools/benchmarks/` | Local experiments, immutable historical-fixture support and result reporting |
 | `dev/tools/profiling/` | CI scheduling analysis and explicit JVM/startup investigations |
 | `dev/tools/tests/` | Tool unit and bounded subprocess regressions; no engine performance workloads |
+| `dev/flink-suite/runner/` | Ordered configuration, preparation, execution and audit phases of `bin/flink-suite.sh` |
 | `dev/profiling/` | Java JFR/agent support, including `CiJfrEvents.java` |
 
 Keep experiments with different input, measurement or validation contracts separate. Share only
@@ -75,11 +76,14 @@ The glibc and TLS commands retain their positional archive arguments. They are n
 | `doris-suite.sh`, `hudi-suite.py`, `iceberg-suite.sh`, `paimon1-suite.sh`, `paimon-compaction-suite.py` | Connector-specific released correctness suites; require their documented JVM/native/service inputs and can prepare dependencies |
 
 Read the [CI guide](ci.md) before qualification and the [upstream-suite guide](upstream-flink-suite.md)
-before preparing source suites. Suite execution retains native/recovery/SQL evidence and
-failure propagation. A test failure must still reach its outcome audit.
+before preparing source suites. `flink-suite.sh` sources four ordered phases in the same shell:
+configuration can reject a request before downloads, preparation owns mutable build inputs,
+execution captures the original Maven result, and auditing retains native/recovery/SQL evidence
+and failure propagation. A test failure must still reach its outcome audit.
 
 Minimal workflow checkouts must include the implementation behind a Python command. Cache keys
-must hash the implementation. Hashing only a thin `bin/` entry point no longer identifies the executable input.
+must hash the implementation and, for the upstream runner, its phase scripts. Hashing only a thin
+`bin/` entry point no longer identifies the executable input.
 
 ## Local benchmarks and evidence
 

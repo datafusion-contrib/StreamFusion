@@ -1,8 +1,8 @@
 # Command entry points
 
 Keep stable developer commands here. Python implementations and their unit tests belong to
-`dev/tools/`. These are development tools, not files to install in Flink's production `bin`
-directory.
+`dev/tools/`; upstream-suite phases belong to `dev/flink-suite/runner/`. These are development
+tools, not files to install in Flink's production `bin` directory.
 
 See [the tool catalog](../docs/developer-tools.md) for responsibilities, requirements, outputs,
 network access and commands that modify a checkout or publish results.
