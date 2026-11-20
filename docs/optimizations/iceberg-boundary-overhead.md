@@ -150,3 +150,14 @@ flat single-key timings remain near the previous version. Continuous composite-v
 commit medians are 1.766 s stock and 0.624 s native (2.83×). The full 2M standalone
 forced-spill cohort is slower than stock and highly variable; isolated repeats and
 running-job results are reported separately, without replacing the slower observations.
+
+## Merge memory for maintenance sorts
+
+The DataFusion sorter reserves a quarter of its configured memory pool for merge
+buffers. That headroom lets it materialize sorted variable-width batches while it
+still holds the input reservations. In the four-million-row bounded benchmark,
+both engines spilled within a 64 MiB sort budget per worker. The native path
+completed where it previously exhausted merge memory and ran 2.56× faster than
+the Flink RowData sort for append data and 2.74× faster with position deletes.
+The [bounded compaction measurements](../connectors/iceberg.md#bounded-compaction-benchmark)
+include complete planning-through-commit timings and physical sort-order checks.

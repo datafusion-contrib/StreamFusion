@@ -1722,10 +1722,11 @@ Hive/REST fixture services are excluded. Parquet admits the native worker, while
 Avro/ORC remain stock. The older action API's V3/V4 rejection assertions remain intact;
 streaming V3 rewrite support is checked by the separate maintenance cases.
 
-These SQL setup/readback queries retain the upstream batch TableEnvironment. Actual
-native file processing explicitly uses Flink STREAMING execution; the inherited
-maintenance tests use the upstream live trigger source. This does not enable bounded
-SQL sources or introduce a new SQL CALL procedure. The test-only boundary retains
+These SQL setup/readback queries retain the upstream batch TableEnvironment. The
+released action test adapter executes file processing in Flink STREAMING mode.
+The inherited continuous maintenance tests use the upstream live trigger source.
+Separate runtime tests run the one-shot compaction in Flink BATCH mode and verify
+committed readback and physical sort order. The upstream test adapter retains
 Iceberg's bin packing, residual handling, stale-snapshot conflict checks, starting
 sequence numbers and commit cleanup. Native rewritten Parquet footers are required;
 empty/constructor-rejection/control-only cases do not invent file-work witnesses.

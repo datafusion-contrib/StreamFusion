@@ -305,11 +305,23 @@ Unsupported file groups retain the original worker before any native files open,
 including its stock ordering behavior. Configure sufficient task off-heap memory
 for the reader, writer, equality sets and optional sort (for example 256 MiB).
 
-For a one-shot job, `NativeIcebergMaintenance.rewriteDataFiles(env, table, options,
-sort)` delegates to Iceberg's `BinPackRewriteFilePlanner`, executes its selected
-groups as Flink tasks, and passes the resulting groups to Iceberg's
-`RewriteDataFilesCommitManager`. The options belong to that existing planner.
-The API rejects unsupported native contracts before submission.
+For one-shot batch compaction, set the environment to Flink `BATCH` and call
+`NativeIcebergMaintenance.rewriteDataFiles(env, table, options, sort)`. Iceberg's
+`BinPackRewriteFilePlanner` selects the groups, bounded Flink tasks rewrite them,
+and Iceberg's `RewriteDataFilesCommitManager` commits the outputs. The options
+belong to the Iceberg planner. The API rejects unsupported native contracts before
+submission. The continuous `TableMaintenance` monitor uses an unbounded trigger
+stream.
+
+```java
+table.replaceSortOrder()
+    .asc("payload", NullOrder.NULLS_FIRST)
+    .desc("id", NullOrder.NULLS_LAST)
+    .commit();
+env.setRuntimeMode(RuntimeExecutionMode.BATCH);
+NativeIcebergMaintenance.rewriteDataFiles(
+    env, table, Map.of("rewrite-all", "true"), true);
+```
 
 Rust reads Parquet into Arrow, applies v2 position/equality deletes or v3 Puffin
 vectors/equality deletes, and writes Parquet again through the existing native sink
@@ -363,6 +375,53 @@ format fallbacks and the distinction between SQL setup and streaming maintenance
 The [sorted/equality maintenance comparison](../benchmarks/iceberg-nested-20261029/README.md)
 separates complete continuous-job commit latency from file-worker throughput and
 includes forced spilling and nested payloads.
+
+### Bounded compaction benchmark
+
+The local Apple M4 comparison uses JDK 17, Flink 2.2.1, Iceberg 1.12.0 and
+release native libraries. Both engines execute in Flink `BATCH` mode at
+parallelism four with 512 MiB task off-heap. Each trial uses the same 16
+Iceberg v2 Parquet input files, four per partition, and commits one Zstd level 3
+file per partition. The position-delete scenarios attach the same delete files,
+removing every 512th row per input file. The timer includes planning, job startup,
+file processing, and the commit. Fixture creation and readback are outside it.
+Each cohort uses one warmup and three alternating measured pairs.
+
+The unsorted baseline calls Iceberg's released Flink bin-pack action. The sorted
+baseline uses the same Iceberg planner and committer as StreamFusion with stock
+Iceberg RowData I/O and Flink's generated comparator and external sorter.
+The released action has no sort-order option. Both sorted paths use a 64 MiB
+sort budget per worker and order by payload ascending with NULLs first, then ID
+descending. Validation checks every committed row, every file's sort-order ID,
+physical per-file ordering, and which encoder wrote each file.
+
+| Input rows | Rewrite | Flink median [range], s | StreamFusion median [range], s | Speedup |
+| ---: | --- | ---: | ---: | ---: |
+| 1.6 million | Append | 0.769 [0.751–0.777] | 0.642 [0.639–0.656] | 1.20× |
+| 1.6 million | Position deletes | 0.894 [0.875–0.906] | 0.679 [0.661–0.701] | 1.32× |
+| 1.6 million | Sorted append | 1.405 [1.402–1.505] | 0.762 [0.759–0.763] | 1.84× |
+| 1.6 million | Sorted with position deletes | 1.551 [1.532–1.650] | 0.781 [0.773–0.840] | 1.99× |
+| 4 million | Append | 0.876 [0.863–0.967] | 0.754 [0.746–0.762] | 1.16× |
+| 4 million | Position deletes | 1.102 [1.097–1.111] | 0.795 [0.776–0.796] | 1.39× |
+| 4 million | Sorted append | 2.791 [2.769–2.921] | 1.089 [1.081–1.184] | 2.56× |
+| 4 million | Sorted with position deletes | 3.059 [3.018–3.244] | 1.116 [1.093–1.223] | 2.74× |
+
+Both engines sorted 1.6 million rows in memory and spilled at 4 million rows.
+The old native sort ran out of merge memory in the larger case. Reserving a
+quarter of the same pool for merge buffers let the native jobs complete with
+12 spills per trial. The RowData control recorded eight spills per trial.
+All 64 jobs passed exact readback. [Per-run results](../benchmarks/results/iceberg-batch-maintenance-20261120.csv).
+
+Run locally with JDK 17 and Cargo.
+
+```sh
+SF_ICEBERG_BATCH_MAINTENANCE_BENCHMARK=true \
+  SF_ICEBERG_MAINTENANCE_ROWS=250000 \
+  mvn -Piceberg,bench,benchmarks -pl streamfusion-iceberg -am \
+  -Dtest=IcebergBatchMaintenanceBenchmark -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+Set `SF_ICEBERG_MAINTENANCE_ROWS=100000` for the 1.6 million-row fixture.
 
 The [release rewrite comparison](../benchmarks/iceberg-rewrite-20261028/README.md)
 measures unsorted file processing against stock Flink at 400k and 2M rows, including
