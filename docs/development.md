@@ -12,6 +12,7 @@ bounded execution protocol under `operator.batch`. Arrow transport and allocatio
 `dev/runtime-layout/operators.tsv` records every core runtime class's family, lifecycle mode and
 identity contract. These ownership modes describe implementation responsibilities, not SQL
 admission; the operator coverage pages remain the support authority.
+For example, adaptive text Calc belongs to streaming execution even though it buffers Arrow batches.
 
 SQL integration groups with closed fixture dependencies live in `runtime.batch.sql` and
 `runtime.stream.sql` beneath `tech.streamfusion`. Cross-mode contracts use `runtime.common`.

@@ -1,6 +1,7 @@
 class	family	mode	identity
 tech.streamfusion.operator.AbandonedRootBackstop	resources	shared	implementation
 tech.streamfusion.operator.AbstractNativeStatefulOperator	stream-lifecycle	stream	deployment-serialization
+tech.streamfusion.operator.AdaptiveTextCalcOperator	calc	stream	deployment-serialization
 tech.streamfusion.operator.ArrowBatch	columnar-transport	shared	shared-transport
 tech.streamfusion.operator.ArrowBatchHandles	columnar-transport	shared	implementation
 tech.streamfusion.operator.ArrowBatchRowKeySelector	columnar-transport	shared	deployment-serialization
