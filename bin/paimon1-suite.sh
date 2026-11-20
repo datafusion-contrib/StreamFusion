@@ -38,6 +38,12 @@ mvn -B -ntp -f dev/flink-suite/agent/pom.xml \
   -Dmaven.compiler.source=17 -Dmaven.compiler.target=17 -DskipTests package
 agent="$repo_dir/dev/flink-suite/agent/target/streamfusion-flink-suite-agent-1.0-SNAPSHOT.jar"
 tests=${SF_PAIMON1_TESTS:-AppendOnlyTableITCase,FirstRowITCase,DynamicBucketTableITCase,ReadWriteTableITCase,PrimaryKeyFileStoreTableITCase,PartialUpdateITCase,FullCompactionFileStoreITCase,FlinkJobRecoveryITCase,ContinuousFileStoreITCase,UnawareBucketAppendOnlyTableITCase,SchemaChangeITCase,FilterPushdownWithSchemaChangeITCase,LookupChangelogWithAggITCase,PreAggregationITCase*,CompositePkAndMultiPartitionedTableITCase}
+if [[ ${SF_PAIMON1_QUARANTINE_REBALANCE_PREFIX:-false} == true && -z ${SF_PAIMON1_TESTS:-} ]]; then
+  # This released test assumes a particular prefix of an unordered parallel stream.
+  flaky_method='org.apache.paimon.flink.AppendOnlyTableITCase#testReadUnwareBucketTableWithRebalanceShuffle'
+  tests+=",!${flaky_method}"
+  echo "Quarantined Paimon 1.0.0 invocation: ${flaky_method}"
+fi
 jvm_args="-Xmx${SF_PAIMON1_TEST_HEAP:-2g} -XX:ActiveProcessorCount=${SF_PAIMON1_TEST_CPUS:-2} --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED"
 jvm_args="$jvm_args -Dlog4j.configurationFile=\"$repo_dir/dev/flink-suite/paimon-log4j2.properties\""
 # Keep the placeholder literal until Surefire assigns each fork its identity.

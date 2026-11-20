@@ -4,6 +4,8 @@ set -euo pipefail
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly AUDIT_ROOT="${DELTA_AUDIT_ROOT:-${REPO_ROOT}/.flink-suite/delta-legacy-1.18}"
 readonly DELTA_ROOT="${AUDIT_ROOT}/delta-3.3.3"
+readonly AUDIT_POM="${REPO_ROOT}/dev/flink-suite/delta-legacy/pom.xml"
+readonly MAVEN_SETTINGS="${REPO_ROOT}/dev/flink-suite/settings.xml"
 readonly DELTA_COMMIT=0ce5dd9f7d02cbc1cd74b7333045784f440636a1
 
 mkdir -p "${AUDIT_ROOT}"
@@ -18,7 +20,12 @@ if [[ "$(git -C "${DELTA_ROOT}" rev-parse HEAD)" != "${DELTA_COMMIT}" ]] \
   exit 2
 fi
 
-mvn -B -ntp -f "${REPO_ROOT}/dev/flink-suite/delta-legacy/pom.xml" \
+python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" --pom "${AUDIT_POM}" --resolve-project
+python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
+  --artifact org.apache.maven.surefire:surefire-junit-platform:3.5.3 \
+  --artifact org.junit.platform:junit-platform-launcher:1.10.2
+
+mvn -B -ntp -o -s "${MAVEN_SETTINGS}" -gs "${MAVEN_SETTINGS}" -f "${AUDIT_POM}" \
   "-Ddelta.source.root=${DELTA_ROOT}" "-Daudit.output=${AUDIT_ROOT}/target" test
 
 if [[ -n "$(git -C "${DELTA_ROOT}" status --porcelain)" ]]; then

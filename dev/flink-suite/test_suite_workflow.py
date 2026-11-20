@@ -17,7 +17,7 @@ WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/flink-suite.
 def command(name):
     path = WORKFLOW
     if name in ("Run unchanged upstream suite with StreamFusion", "Require declared runtime audit routes"):
-        path = WORKFLOW.with_name("flink-suite-line.yml")
+        path = WORKFLOW.with_name("flink-suite-jobs.yml")
     lines = path.read_text().splitlines()
     start = lines.index("      - name: " + name)
     start = next(i for i in range(start, len(lines)) if lines[i] == "        run: |") + 1
@@ -28,6 +28,61 @@ def command(name):
 
 
 class SuiteWorkflowTest(unittest.TestCase):
+    def test_iceberg_prepares_the_mediated_native_reactor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            python = root / "python3"
+            python.write_text('#!/bin/bash\nprintf "%s\n" "$@" done\n')
+            python.chmod(0o755)
+            runner = WORKFLOW.parents[2] / "bin/iceberg-suite.sh"
+            result = subprocess.run(
+                ["bash", str(runner), "prepare"],
+                env={**os.environ, "FLINK_VERSION": "2.2.1", "FLINK_SUITE_ROOT": str(root),
+                     "PATH": str(root) + os.pathsep + os.environ["PATH"]},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            stock, native, graph, providers, end = result.stdout.split("done\n")
+            self.assertFalse(end)
+            reactor = ["--pom", str(WORKFLOW.parents[2] / "pom.xml"), "--profile", "iceberg,iceberg-upstream",
+                       "--projects", "streamfusion-iceberg", "--also-make", "--define", "flink.version=2.2.1"]
+            repository = ["--repository", str(root / "iceberg-m2")]
+            self.assertIn("--resolve-project", stock.splitlines())
+            self.assertEqual(repository + reactor, native.splitlines()[1:])
+            self.assertTrue(graph.splitlines()[0].endswith("/bin/ci_maven_cache.py"))
+            self.assertEqual(["complete-graph", *repository, "--", *reactor], graph.splitlines()[1:])
+            self.assertIn("org.apache.maven.surefire:surefire-junit-platform:3.5.3", providers.splitlines())
+
+    def test_iceberg_uses_the_released_repository_offline_for_both_phases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            suite = root / "isolated suite"
+            payload = suite / "2.2/streamfusion-source/native/target/debug"
+            payload.mkdir(parents=True)
+            for library in ("streamfusion", "streamfusion_iceberg"):
+                (payload / f"lib{library}.so").touch()
+            maven = root / "mvn"
+            maven.write_text('#!/bin/bash\nprintf "%s\n" "$@" done\n[[ "$*" != *iceberg,iceberg-upstream* ]] || exit 73\n')
+            maven.chmod(0o755)
+            runner = WORKFLOW.parents[2] / "bin/iceberg-suite.sh"
+            result = subprocess.run(
+                ["bash", str(runner)],
+                env={**os.environ, "FLINK_VERSION": "2.2.1", "FLINK_SUITE_ROOT": str(suite),
+                     "FLINK_SUITE_REUSE_COMMON_BUILD": "true",
+                     "PATH": str(root) + os.pathsep + os.environ["PATH"]},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(73, result.returncode, result.stderr)
+            stock, native, end = result.stdout.split("done\n")
+            self.assertFalse(end)
+            for invocation in (stock, native):
+                args = invocation.splitlines()
+                self.assertIn("-o", args)
+                self.assertIn(f"-Dmaven.repo.local={suite / 'iceberg-m2'}", args)
+                self.assertEqual("test", args[-1])
+            self.assertIn("dev/flink-suite/iceberg/pom.xml", stock)
+            self.assertIn("-Piceberg,iceberg-upstream", native)
+
     def test_group_runs_every_suite_and_preserves_any_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -89,7 +144,7 @@ class SuiteWorkflowTest(unittest.TestCase):
                     report.write_text(saved)
 
     def test_final_gate_rejects_failed_cancelled_and_unexpected_skipped_jobs(self):
-        dependencies = ("plan", "upstream-line", "legacy-delta-audit")
+        dependencies = ("plan", "upstream-flink-22", "upstream-flink-118", "legacy-delta-audit")
         for inventory in (False, True):
             for dependency in dependencies:
                 for state in ("success", "failure", "cancelled", "skipped"):

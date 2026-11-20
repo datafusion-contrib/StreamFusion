@@ -34,6 +34,11 @@ class PaimonCiTest(unittest.TestCase):
         parent = ET.parse(ROOT / 'pom.xml')
         plugins = parent.findall('.//m:plugin', NS)
         surefire = next(p for p in plugins if p.findtext('m:artifactId', namespaces=NS) == 'maven-surefire-plugin')
+        resources = next(p for p in plugins if p.findtext('m:artifactId', namespaces=NS) == 'maven-resources-plugin')
+        compiler = next(p for p in plugins if p.findtext('m:artifactId', namespaces=NS) == 'maven-compiler-plugin')
+        resources_version = resources.findtext('m:version', namespaces=NS)
+        compiler_version = compiler.findtext('m:version', namespaces=NS)
+        junit_version = parent.findtext('m:properties/m:junit.version', namespaces=NS)
         version = surefire.findtext('m:version', namespaces=NS)
         forks = plain(surefire.find('m:configuration/m:forkCount', NS))
         module = ET.parse(ROOT / 'streamfusion-paimon1/pom.xml')
@@ -48,9 +53,10 @@ class PaimonCiTest(unittest.TestCase):
             (root / 'pom.xml').write_text(f'''<project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion><groupId>test</groupId><artifactId>paimon-fork-probe</artifactId><version>1</version>
   <properties><maven.compiler.release>17</maven.compiler.release></properties>
-  <dependencies><dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.2</version><scope>test</scope></dependency></dependencies>
+  <dependencies><dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>{junit_version}</version><scope>test</scope></dependency></dependencies>
   <build><plugins>
-    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-resources-plugin</artifactId><version>{resources_version}</version></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>{compiler_version}</version></plugin>
     <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>{version}</version>
       <configuration><argLine>{fork_args}</argLine>{forks}<reuseForks>true</reuseForks>{properties}</configuration>
     </plugin>
@@ -62,6 +68,7 @@ class PaimonCiTest(unittest.TestCase):
                 (source / f'{name}.java').write_text('''import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.*;
+import java.util.concurrent.TimeUnit;
 class NAME {
   @Test void isolated() throws Exception {
     String fork = System.getProperty("mvn.forkNumber");
@@ -73,9 +80,16 @@ class NAME {
       Files.createDirectories(path);
       Files.writeString(path.resolve("NAME"), fork);
     }
-    Thread.sleep(1000);
+    Path ready = Path.of("target", "started");
+    Files.createDirectories(ready);
+    Files.createFile(ready.resolve("NAME"));
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+    while (!Files.exists(ready.resolve("OTHER")) && System.nanoTime() < deadline) {
+      Thread.sleep(20);
+    }
+    assertTrue(Files.exists(ready.resolve("OTHER")), "The other Surefire fork never started");
   }
-}'''.replace('NAME', name))
+}'''.replace('NAME', name).replace('OTHER', 'SecondTest' if name == 'FirstTest' else 'FirstTest'))
             result = subprocess.run(['mvn', '-B', '-ntp', '-f', str(root / 'pom.xml'),
                                      '-Dsf.testForks=2', 'test'], capture_output=True, text=True, timeout=120)
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)

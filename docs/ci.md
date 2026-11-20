@@ -255,7 +255,12 @@ includes prerequisite builds as well as runner queueing; it is not labelled
 as pure runner wait. Queued jobs do not acquire a fictitious execution time from GitHub's
 preallocated start timestamp. The ordinary Java jobs are named **Runtime, connectors and
 formats** because their selection includes all three; Doris's real-server suite remains a
-separate job. Full workflow results continue to control the required gates.
+separate job. In Actions, **Test suites** groups the primary CI jobs, and **Flink 1.18**
+and **Flink 2.2** group the upstream jobs. Reused coverage skips these named groups before
+expanding their matrices. Each Flink line also has an **Integration tests** group, which
+GitHub can display when upstream preparation fails before it expands the matrix. The group
+supplies the Flink line, so child jobs use labels such as **Kafka** or **Runtime (shard 2)**. The two required
+aggregate check names stay stable.
 
 GitHub cron is best effort: a requested fifteen-minute schedule can be delayed or dropped for
 hours. Fork workflow completions do not trigger `workflow_run` in the canonical repository,
@@ -656,8 +661,21 @@ the reactor's `bench` profile, and verifies JNI/package boundaries before Maven 
 the source/sink parity phase and the upstream SQL phase pass `-Dnative.build.skip=true`
 and reuse those libraries. Previously each Maven module invoked Cargo with a different
 package selection: the successful main run on 2026-10-20 performed seven release builds,
-recompiling DataFusion three times. The test selections, JVM limits and single-fork SQL
-execution stay the same. Cargo's compilation timings are retained with the test evidence.
+recompiling DataFusion three times. The JVM limits and single-fork upstream SQL execution
+stay the same. Cargo's compilation timings are retained with the test evidence.
+
+The released Paimon 1.0.0
+`AppendOnlyTableITCase#testReadUnwareBucketTableWithRebalanceShuffle` only checks the first two
+rows across four parallel readers. It writes four identical pairs, so the unordered read can
+deliver two copies of the same value first. The November 12 compatibility run received two
+copies of `+I[1]`. Four local stock repeats on Flink 1.18.1 and JDK 17 passed.
+[November 12 failure log](https://github.com/datafusion-contrib/StreamFusion/actions/runs/43142691276/job/130933174381)
+
+The compatibility workflow excludes that method via `SF_PAIMON1_QUARANTINE_REBALANCE_PREFIX`.
+Local runs and explicit `SF_PAIMON1_TESTS` selections still run the original method. The parity
+phase checks all eight row values and their multiplicities across the same four parallel readers
+after both stock and accelerated writes. The scan with consumer retention uses the released stock
+source.
 
 Default-enabled paths need positive native-route assertions. Fixed-size-binary compatibility
 tests construct that legacy physical schema explicitly rather than changing global feature
@@ -789,6 +807,65 @@ timings rather than a paired full-suite speedup measurement. The existing CI mat
 the effect on both JDKs and the optimized image job.
 
 ## Maven dependencies
+
+On the November 19 submission of PR #675, separate jobs failed during Maven plugin resolution
+before reaching their SQL assertions. The main Paimon compatibility run received HTTP 429 while
+starting a standalone Surefire probe. The fork upstream run could not resolve the agent's default
+JAR plugin or Paimon 2.0.0's remote-resources plugin. Those two jobs passed on the same commit after
+retry.
+[Canonical Paimon run](https://github.com/datafusion-contrib/StreamFusion/actions/runs/44512986175)
+[Fork upstream first attempt](https://github.com/liuyongvs/StreamFusion/actions/runs/44480446131/attempts/1)
+
+The Paimon 1.0 fork-isolation probe uses the reactor's dependency and plugin versions and runs Maven
+offline after source/sink parity populates the same JDK 17 repository. The two forks synchronize on
+evidence that both started. The upstream agent pins the resources and JAR plugins and resolves its
+dependencies and Surefire provider in the bounded setup stage before an offline build.
+
+Maven 3.10.0's `go-offline` left a selected provided dependency missing in the first qualification.
+Preparation also runs `dependency:resolve` to populate Maven's mediated agent classpath. Both
+hosted Flink lines then built the agent and ran its tests.
+[Initial agent failure](https://github.com/jordepic/StreamFusion-contrib/actions/runs/44518286371/job/135540093866)
+[Corrected agent preparation](https://github.com/jordepic/StreamFusion-contrib/actions/runs/44519201597)
+
+Both upstream preparation jobs add the released Paimon reactor's remote-resources plugin and its
+dependencies to the transferred Maven repository. The Kafka 3.2 build also starts with its released
+connector parent in the repository. Modern Delta resolves the exact standalone fixture model, its
+lifecycle plugins and its test provider in shared preparation, then executes the fixture offline.
+Manual modern Delta runs prepare the same model using the requested Delta and Flink versions before
+executing it. These paths address artifact resolution errors that occurred before any test started.
+[Modern Delta](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135321855577)
+[Paimon 2.2 lane](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135321855717)
+[Kafka 3.2](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135322241767)
+
+The Kafka 5.0 release supplies its own Maven wrapper. The common Flink preparation runs
+that wrapper while resolving the released connector model and transfers the downloaded Maven
+distribution with the other prepared tools. Kafka 3.2 has no wrapper and keeps using its
+Flink line's already prepared Maven. A cold Flink 2.2 consumer previously failed downloading
+Kafka's Maven 3.8.6 before test compilation.
+[Kafka wrapper failure](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135767759975)
+
+The released Iceberg comparison previously started both Maven builds in the runner's default
+repository. A cold hosted run failed before the first test when Maven could not resolve
+`maven-resources-plugin:3.5.0`. The Iceberg job now prepares and caches a separate Maven
+repository for its stock fixture and native reactor, then runs both offline. Both phases use the
+published Flink planner. The shared upstream Flink repository contains a source-built planner at
+the same coordinates. Preparation resolves the native reactor's mediated dependency graph too.
+The generic offline goal alone left Avro 1.11.4 absent even though the stock suite passed.
+[Iceberg resources plugin failure](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135592271862)
+[Iceberg native dependency failure](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/135767760077)
+
+Shared runtime shards use the same offline Maven resolution mode exercised by the preparation smoke
+test. An archived Flink 1.18 shard reported an unresolved file in Surefire's provider classpath
+before the test fork started. Its exact missing artifact could not be recovered from the log.
+The shard remains required.
+[Surefire startup failure](https://github.com/jordepic/StreamFusion-contrib/actions/jobs/134969018725)
+
+The legacy Delta audit resolves its plugins, mediated classpath and Surefire provider before the
+offline test command. The agent and Delta each key their
+Maven cache to their own standalone POM, so unrelated POM edits leave their cache keys stable. Cold
+preparation and connector source builds still need access to released artifacts. Retries are confined
+to dependency preparation.
+[Legacy Delta setup failure](https://github.com/jordepic/StreamFusion-contrib/actions/runs/44519201597/job/135543262820)
 
 The upstream execution-evidence agent is a separate JDK 17 development tool. Its standalone
 POM pins the compiler plugin to 3.13.0 so Maven 3.8 also honors `maven.compiler.release=17`
