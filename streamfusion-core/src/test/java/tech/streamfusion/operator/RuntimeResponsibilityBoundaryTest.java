@@ -19,10 +19,12 @@ import org.junit.jupiter.api.Test;
 import tech.streamfusion.operator.aggregate.stream.JvmAccumulatorCache;
 import tech.streamfusion.operator.aggregate.stream.JvmMiniBatchGroup;
 import tech.streamfusion.operator.batch.BoundedArrowOutput;
+import tech.streamfusion.operator.batch.BoundedExecution;
 import tech.streamfusion.operator.join.stream.FlinkWindowJoinMetrics;
 import tech.streamfusion.operator.stream.MiniBatchBoundary;
 import tech.streamfusion.operator.stream.MiniBatchMetrics;
 import tech.streamfusion.operator.window.stream.FlinkWindowMetrics;
+import tech.streamfusion.operator.window.stream.WindowCalendarRuntime;
 import tech.streamfusion.operator.window.stream.WindowTimeDomain;
 
 class RuntimeResponsibilityBoundaryTest {
@@ -31,11 +33,13 @@ class RuntimeResponsibilityBoundaryTest {
           JvmAccumulatorCache.class,
           JvmMiniBatchGroup.class,
           BoundedArrowOutput.class,
+          BoundedExecution.class,
           FlinkWindowJoinMetrics.class,
           MiniBatchBoundary.class,
           MiniBatchMetrics.class,
           FlinkWindowMetrics.class,
-          WindowTimeDomain.class);
+          WindowTimeDomain.class,
+          WindowCalendarRuntime.class);
 
   @Test
   void deployedSerializationIdentitiesAndConfigurationFieldsRemainStable() throws Exception {
@@ -100,7 +104,7 @@ class RuntimeResponsibilityBoundaryTest {
         assertNotNull(input, resource);
         String constants = new String(input.readAllBytes(), StandardCharsets.ISO_8859_1);
         assertFalse(constants.contains("tech/streamfusion/planner/"), helper.getName());
-        if (helper == BoundedArrowOutput.class) {
+        if (helper.getPackageName().equals("tech.streamfusion.operator.batch")) {
           assertFalse(constants.contains("tech/streamfusion/operator/stream/"));
           assertFalse(constants.contains("tech/streamfusion/operator/window/"));
         } else {

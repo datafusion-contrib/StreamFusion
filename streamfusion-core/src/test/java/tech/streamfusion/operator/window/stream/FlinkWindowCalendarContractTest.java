@@ -1,4 +1,4 @@
-package tech.streamfusion.operator;
+package tech.streamfusion.operator.window.stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -9,6 +9,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import org.apache.flink.table.runtime.util.TimeWindowUtil;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.operator.WindowCalendar;
 
 class FlinkWindowCalendarContractTest {
   private static final ZoneId LOS_ANGELES = ZoneId.of("America/Los_Angeles");
