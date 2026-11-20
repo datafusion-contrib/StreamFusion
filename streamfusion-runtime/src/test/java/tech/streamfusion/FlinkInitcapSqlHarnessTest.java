@@ -1,6 +1,7 @@
 package tech.streamfusion;
 
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkInitcapSqlHarnessTest {
   @Test

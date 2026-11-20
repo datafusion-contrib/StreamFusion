@@ -7,6 +7,7 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkUnhexSqlHarnessTest {
   @org.junit.jupiter.api.BeforeEach

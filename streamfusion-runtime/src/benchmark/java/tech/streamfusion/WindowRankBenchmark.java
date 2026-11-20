@@ -15,6 +15,7 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.runtime.common.NativeParity;
 
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class WindowRankBenchmark {

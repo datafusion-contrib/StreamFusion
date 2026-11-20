@@ -10,6 +10,7 @@ import java.util.Map;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class NativeParityValueTest {
   @Test

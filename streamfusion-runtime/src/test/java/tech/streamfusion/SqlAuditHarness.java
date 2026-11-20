@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.flink.table.api.TableEnvironment;
 import tech.streamfusion.compat.ListCollectors;
+import tech.streamfusion.runtime.common.NativeParity;
 
 final class SqlAuditHarness {
   enum Kind {

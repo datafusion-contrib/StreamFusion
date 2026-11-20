@@ -11,6 +11,7 @@ import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.data.binary.BinaryStringDataUtil;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkDynamicTrimSqlHarnessTest {
   @org.junit.jupiter.api.BeforeEach

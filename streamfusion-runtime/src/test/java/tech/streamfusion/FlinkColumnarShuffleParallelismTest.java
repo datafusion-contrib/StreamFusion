@@ -3,12 +3,10 @@ package tech.streamfusion;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import tech.streamfusion.operator.ArrowBatchHandles;
-import tech.streamfusion.operator.BatchCoalescer;
-import java.time.ZoneId;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.ZoneId;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -18,6 +16,9 @@ import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.operator.ArrowBatchHandles;
+import tech.streamfusion.operator.BatchCoalescer;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /**
  * Exercises the columnar keyed shuffle across multiple channels end to end at parallelism 2. The

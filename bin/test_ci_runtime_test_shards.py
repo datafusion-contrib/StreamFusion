@@ -30,6 +30,30 @@ def plain(element):
 
 
 class RuntimeTestShardsTest(unittest.TestCase):
+    def test_relocated_tests_reuse_observations_without_changing_historical_names(self):
+        old = "tech/streamfusion/BatchSortSqlTest"
+        current = "tech/streamfusion/runtime/batch/sql/BatchSortSqlTest"
+        recorded = {old: 17.5, "UnrelatedTest": 3.0}
+        self.assertEqual({current: 17.5, "UnrelatedTest": 3.0}, shards.relocated_costs(recorded))
+        self.assertEqual({old: 17.5, "UnrelatedTest": 3.0}, recorded)
+        self.assertEqual({current: 17.5}, shards.relocated_costs({current: 17.5}))
+        self.assertEqual({current: 18.0}, shards.relocated_costs({old: 17.5, current: 18.0}))
+        self.assertEqual({current: 18.0}, shards.relocated_costs({current: 18.0, old: 17.5}))
+
+    def test_relocated_costs_preserve_measurement_priority_and_provisional_floors(self):
+        old = "tech/streamfusion/BatchSortSqlTest"
+        current = "tech/streamfusion/runtime/batch/sql/BatchSortSqlTest"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "durations.json"
+            recorded = {"estimated_seconds": {current: 50}, "seconds": {old: 17.5},
+                        "seconds_by_line": {"2.2": {current: 18}},
+                        "provisional_seconds_by_line": {"2.2": {old: 19}}}
+            path.write_text(json.dumps(recorded))
+            with patch.object(shards, "DURATIONS", path):
+                self.assertEqual({current: 17.5}, shards.load_durations())
+                self.assertEqual({current: 19}, shards.load_durations("2.2"))
+            self.assertEqual(recorded, json.loads(path.read_text()))
+
     def test_worker_lanes_balance_without_pinning_and_ignore_inventory_order(self):
         pinned = sorted(shards.FIRST_SHARD_CLASSES)[:2]
         names = [*pinned, "MediumTest", "ShortTest", "NewTest", "ZeroTest"]

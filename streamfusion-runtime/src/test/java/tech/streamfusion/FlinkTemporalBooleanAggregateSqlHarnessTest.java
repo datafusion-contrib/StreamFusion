@@ -18,6 +18,7 @@ import org.apache.flink.types.RowKind;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkTemporalBooleanAggregateSqlHarnessTest {
   @org.junit.jupiter.api.Test

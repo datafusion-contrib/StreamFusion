@@ -1,8 +1,9 @@
 package tech.streamfusion;
 
-import static tech.streamfusion.NativeParity.assertParity;
+import static tech.streamfusion.runtime.common.NativeParity.assertParity;
 
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkJsonExistsSqlHarnessTest {
   @Test

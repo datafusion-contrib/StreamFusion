@@ -1,7 +1,8 @@
 package tech.streamfusion;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static org.apache.flink.table.api.DataTypes.*;
+import static org.junit.jupiter.api.Assertions.*;
+
 import java.util.*;
 import java.util.function.Supplier;
 import org.apache.flink.table.annotation.DataTypeHint;
@@ -12,6 +13,7 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkMapProjectionSqlHarnessTest {
   @ParameterizedTest

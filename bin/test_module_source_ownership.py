@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Require physical module source ownership and prevent implicit cross-module class emission."""
+import importlib.util
 import os
 import pathlib
 import subprocess
@@ -13,6 +14,52 @@ NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
 
 class ModuleSourceOwnershipTest(unittest.TestCase):
+    def test_runtime_responsibilities_and_relocated_tests_have_explicit_owners(self):
+        spec = importlib.util.spec_from_file_location("runtime_layout", ROOT / "dev/runtime_layout.py")
+        layout = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(layout)
+        operators, tests = layout.validate()
+        self.assertGreater(operators, 0)
+        self.assertGreater(tests, 0)
+
+    def test_runtime_layout_rejects_omissions_duplicates_and_misplaced_tests(self):
+        spec = importlib.util.spec_from_file_location("runtime_layout", ROOT / "dev/runtime_layout.py")
+        layout = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(layout)
+        for problem in ("missing_operator", "duplicate_test", "old_source", "package", "mode"):
+            with self.subTest(problem=problem), tempfile.TemporaryDirectory() as temp:
+                root = pathlib.Path(temp)
+                inventory = root / "dev/runtime-layout"
+                inventory.mkdir(parents=True)
+                operator = root / "streamfusion-core/src/main/java/tech/streamfusion/operator/Example.java"
+                operator.parent.mkdir(parents=True)
+                operator.write_text("package tech.streamfusion.operator; class Example {}")
+                owners = inventory / "operators.tsv"
+                owners.write_text("class\tfamily\tmode\tidentity\n"
+                                  "tech.streamfusion.operator.Example\tcalc\tshared\timplementation\n")
+                source = root / "streamfusion-runtime/src/test/java"
+                test = source / "tech/streamfusion/runtime/batch/sql/ExampleTest.java"
+                test.parent.mkdir(parents=True)
+                test.write_text("package tech.streamfusion.runtime.batch.sql; class ExampleTest {}")
+                relocations = inventory / "test-relocations.tsv"
+                row = ("streamfusion-runtime\ttech.streamfusion.ExampleTest\t"
+                       "tech.streamfusion.runtime.batch.sql.ExampleTest\tbatch\n")
+                relocations.write_text("owner\tprevious_class\tcurrent_class\tmode\n" + row)
+                self.assertEqual((1, 1), layout.validate(root))
+                if problem == "missing_operator":
+                    owners.write_text("class\tfamily\tmode\tidentity\n")
+                elif problem == "duplicate_test":
+                    with relocations.open("a") as stream:
+                        stream.write(row)
+                elif problem == "old_source":
+                    (source / "tech/streamfusion/ExampleTest.java").write_text("class ExampleTest {}")
+                elif problem == "package":
+                    test.write_text("package tech.streamfusion; class ExampleTest {}")
+                else:
+                    relocations.write_text(relocations.read_text().replace("\tbatch\n", "\tstream\n"))
+                with self.assertRaises(ValueError):
+                    layout.validate(root)
+
     def test_runtime_owns_cross_module_tests_and_uses_its_default_java_root(self):
         self.assertFalse((ROOT / "src/test").exists())
         runtime = ET.parse(ROOT / "streamfusion-runtime/pom.xml").getroot()

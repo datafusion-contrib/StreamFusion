@@ -10,6 +10,7 @@ import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkNestedBridgeRecoverySqlHarnessTest {
   @ParameterizedTest(name = "{0} {1} {2}")

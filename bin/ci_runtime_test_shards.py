@@ -1,6 +1,7 @@
 """Partition the compiled default Surefire selection without splitting test classes."""
 
 import argparse
+import csv
 import fnmatch
 import hashlib
 import json
@@ -23,6 +24,18 @@ FIRST_SHARD_CLASSES = AUDIT_CLASSES | {
     "tech/streamfusion/FlinkNestedBridgeTableFunctionSqlHarnessTest",
 }
 DURATIONS = Path(__file__).resolve().parents[1] / "dev/ci/runtime-durations.json"
+RELOCATIONS = Path(__file__).resolve().parents[1] / "dev/runtime-layout/test-relocations.tsv"
+
+
+def relocated_costs(values):
+    with RELOCATIONS.open() as stream:
+        aliases = {row["previous_class"].replace(".", "/"): row["current_class"].replace(".", "/")
+                   for row in csv.DictReader(stream, delimiter="\t")}
+    result = {name: duration for name, duration in values.items() if name not in aliases}
+    for name, duration in values.items():
+        if name in aliases:
+            result.setdefault(aliases[name], duration)
+    return result
 
 
 def _validate_durations(durations):
@@ -33,12 +46,12 @@ def _validate_durations(durations):
 
 def load_durations(line=None):
     recorded = json.loads(DURATIONS.read_text())
-    durations = {**recorded.get("estimated_seconds", {}),
-                 **recorded.get("estimated_seconds_by_line", {}).get(line, {}),
-                 **recorded["seconds"],
-                 **recorded.get("seconds_by_line", {}).get(line, {})}
+    durations = {**relocated_costs(recorded.get("estimated_seconds", {})),
+                 **relocated_costs(recorded.get("estimated_seconds_by_line", {}).get(line, {})),
+                 **relocated_costs(recorded["seconds"]),
+                 **relocated_costs(recorded.get("seconds_by_line", {}).get(line, {}))}
     _validate_durations(durations)
-    provisional = recorded.get("provisional_seconds_by_line", {}).get(line, {})
+    provisional = relocated_costs(recorded.get("provisional_seconds_by_line", {}).get(line, {}))
     _validate_durations(provisional)
     for name, floor in provisional.items():
         durations[name] = max(durations.get(name, 0), floor)

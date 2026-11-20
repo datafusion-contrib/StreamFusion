@@ -13,6 +13,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import tech.streamfusion.compat.FlinkTestSources;
 import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkFloatingNonTimeRankSqlHarnessTest {
   static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> cases() {

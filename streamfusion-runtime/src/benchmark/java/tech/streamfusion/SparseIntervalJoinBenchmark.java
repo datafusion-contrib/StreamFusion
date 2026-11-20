@@ -13,6 +13,7 @@ import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import tech.streamfusion.planner.NativePlanner;
+import tech.streamfusion.runtime.common.NativeParity;
 
 /** Complete row-fed interval joins with a large key domain and selective opposite-side probes. */
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")

@@ -7,6 +7,7 @@ import java.util.List;
 import org.apache.flink.configuration.Configuration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import tech.streamfusion.runtime.batch.sql.BatchSqlTestSupport;
 
 /**
  * Complete global-aggregate jobs retain the row/Arrow perimeter and blocking partial-state shuffle.
@@ -32,12 +33,12 @@ class BatchAggregateJobBenchmark {
       metrics.setAsContext(config, 2, 128L << 20);
       var stock =
           fixedExtrema
-              ? BatchExtremaSqlTest.environment(false, rows, config, 3)
-              : BatchSortSqlTest.environment(false, rows, config);
+              ? BatchSqlTestSupport.environment(false, rows, config, 3)
+              : BatchSqlTestSupport.environment(false, rows, config);
       var nativeEnv =
           fixedExtrema
-              ? BatchExtremaSqlTest.environment(true, rows, config, 3)
-              : BatchSortSqlTest.environment(true, rows, config);
+              ? BatchSqlTestSupport.environment(true, rows, config, 3)
+              : BatchSqlTestSupport.environment(true, rows, config);
       for (var env : List.of(stock, nativeEnv))
         env.executeSql(
             fixedExtrema
