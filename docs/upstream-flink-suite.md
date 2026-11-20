@@ -1,5 +1,14 @@
 # Upstream Flink suite
 
+`bin/flink-suite.sh` remains the stable entry point. Its configuration, preparation, execution
+and evidence-audit phases live under `dev/flink-suite/runner/` and run in the same shell, retaining
+the original variables and Maven exit status. Configuration rejects unsupported requests before
+downloads, and unsuccessful test execution still reaches the audit. Phase ownership does not
+change test selections, native-route requirements, recovery assertions or outcome inventories.
+The `all` mode starts each child through the public entry point, so each suite configures its
+own shell and the Iceberg suite retains its separate runner. A child failure stops `all` with
+the original exit status; shared-build reuse is unchanged.
+
 ## Batch SQL development
 
 The planner factory and suite agent now install a mode-specific batch adapter.
@@ -322,8 +331,8 @@ for the `01-streamfusion-paimon.jar` ordering a deployment relies on. Paimon's m
 planner test-jar before the planner itself, which would place stock Calcite ahead of Flink's patched
 validator classes (breaking `CALL` procedures and time travel in stock tests), so the runner drops
 the resolved calcite-core from that module's test classpath and appends it after the planner
-instead. `all` runs formats, Parquet, ORC,
-the planner runtime suite, Paimon, Delta, and Kafka in that order.
+instead. `all` runs formats, Parquet, ORC, the planner runtime suite, RocksDB state, Paimon,
+then Delta and Iceberg on Flink 2.2, and finally Kafka.
 
 For Paimon 2.1 on Flink 2.2, the agent adapts the single result assertion in
 `BatchFileStoreITCase.testScanWithSpecifiedPartitionsWithLevelMaxPt` to compare

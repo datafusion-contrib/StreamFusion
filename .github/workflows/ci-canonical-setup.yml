@@ -178,8 +178,7 @@ jobs:
             python3 - <<'PY'
           import os, sys
           from pathlib import Path
-          sys.path.insert(0, 'bin')
-          import ci_jfr
+          from dev.tools.profiling import jfr as ci_jfr
           ci_jfr.configuration(Path(os.environ['JAVA_HOME']), Path(os.environ['RUNNER_TEMP']) / 'parent.jfc')
           PY
             extra+=" -XX:StartFlightRecording=settings=$RUNNER_TEMP/parent.jfc,filename=$RUNNER_TEMP/parent-jfr,dumponexit=true"
@@ -220,8 +219,7 @@ jobs:
           python3 - <<'PY'
           import json, os, sys
           from pathlib import Path
-          sys.path.insert(0, 'bin')
-          import ci_jfr
+          from dev.tools.profiling import jfr as ci_jfr
           temporary = Path(os.environ['RUNNER_TEMP'])
           expected = 2 if '${{ inputs.metadata_regression }}' == 'true' or '${{ inputs.kafka_rescale_regression }}' == 'true' else 4
           summary = ci_jfr.summarize(list((temporary / 'parent-jfr').glob('*.jfr')),
