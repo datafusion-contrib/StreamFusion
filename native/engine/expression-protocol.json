@@ -191,11 +191,12 @@
     },
     {
       "name": "STRING_COMPARISON",
-      "code": 48
+      "code": 49
     }
   ],
   "reservedNodeKinds": [
-    10
+    10,
+    48
   ],
   "castTargets": [
     {

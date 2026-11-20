@@ -20,6 +20,7 @@ class ExpressionProtocolTest {
     assertThrows(IllegalArgumentException.class, () -> ExpressionKind.fromCode(10));
     assertThrows(IllegalArgumentException.class, () -> ExpressionKind.fromCode(-1));
     assertThrows(IllegalArgumentException.class, () -> ExpressionKind.fromCode(48));
+    assertEquals(ExpressionKind.STRING_COMPARISON, ExpressionKind.fromCode(49));
     assertEquals(CastTarget.TINYINT, CastTarget.fromCode(0));
     assertEquals(CastTarget.STRING, CastTarget.fromCode(6));
     assertThrows(IllegalArgumentException.class, () -> CastTarget.fromCode(7));

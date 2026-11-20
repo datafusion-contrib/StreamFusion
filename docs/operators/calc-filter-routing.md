@@ -88,6 +88,9 @@ remain separate from operation identities.
 Null-safe reference comparisons use these generated operations and append their boolean
 literal through the same buffer owner as other expressions.
 
+Pairwise string comparison uses node code 49. Codes 10 and 48 remain reserved
+and are rejected by both expression decoders.
+
 Generated expression code is built entirely in the planner. Serialized Calc/filter bindings
 carry only the generated function, runtime types/schema and user-function references; workers
 do not need Flink's planner or Calcite classes to deserialize or execute them. The runtime

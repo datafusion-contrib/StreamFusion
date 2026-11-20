@@ -18,7 +18,7 @@ fn main() {
                 let batch = input(mode, shape, width, equality, ascii);
                 // STRING_COMPARISON over two INPUT_REF nodes, with either EQUAL or LESS_THAN.
                 let mut calc = CalcProgram::new(
-                    vec![48, 0, 0],
+                    vec![49, 0, 0],
                     vec![if equality { 14 } else { 12 }, 0, 1],
                     vec![2, 0, 0],
                     vec![],

@@ -50,7 +50,7 @@ pub(crate) enum ExpressionKind {
     ZonedExtract = 45,
     CollectionCast = 46,
     DecimalIf = 47,
-    StringComparison = 48,
+    StringComparison = 49,
 }
 
 impl ExpressionKind {
@@ -103,7 +103,7 @@ impl ExpressionKind {
             45 => Self::ZonedExtract,
             46 => Self::CollectionCast,
             47 => Self::DecimalIf,
-            48 => Self::StringComparison,
+            49 => Self::StringComparison,
             _ => return None,
         })
     }
