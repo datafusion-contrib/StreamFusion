@@ -354,6 +354,10 @@ public final class StreamFusionSuiteAgent {
                     ? builder.visit(
                         Advice.to(RequireCanonicalRestoreExecution.class).on(named("testRestore")))
                     : builder)
+        .type(named("tech.streamfusion.operator.AdaptiveTextCalcOperator"))
+        .transform(
+            (builder, type, classLoader, module, protectionDomain) ->
+                builder.visit(Advice.to(RecordNativeRowsArgument.class).on(named("nativeRange"))))
         .type(
             namedOneOf(
                 "tech.streamfusion.operator.NativeCalcOperator",
@@ -544,7 +548,7 @@ public final class StreamFusionSuiteAgent {
                 builder
                     .visit(Advice.to(BindNativeExecution.class).on(isConstructor()))
                     .visit(
-                        Advice.to(RecordNativeDeltaWrite.class)
+                        Advice.to(RecordNativeRowsArgument.class)
                             .on(named("write").and(takesArguments(3)))))
         .type(named(NATIVE_PAIMON_PARQUET_WRITER))
         .transform(
@@ -1027,10 +1031,10 @@ public final class StreamFusionSuiteAgent {
     }
   }
 
-  public static final class RecordNativeDeltaWrite {
+  public static final class RecordNativeRowsArgument {
     @Advice.OnMethodExit
-    static void exit(@Advice.This Object writer, @Advice.Argument(2) int rows) {
-      NativeExecution.completed(writer, rows);
+    static void exit(@Advice.This Object operator, @Advice.Argument(2) int rows) {
+      NativeExecution.completed(operator, rows);
     }
   }
 

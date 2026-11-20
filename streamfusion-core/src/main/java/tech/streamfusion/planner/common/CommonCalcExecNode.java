@@ -93,7 +93,7 @@ public class CommonCalcExecNode extends ExecNodeBase<ArrowBatch>
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta(TRANSFORMATION, getDescription(), getDescription(), config),
-        new NativeCalcOperator(
+        createOperator(
             kinds,
             payload,
             childCounts,
@@ -107,5 +107,13 @@ public class CommonCalcExecNode extends ExecNodeBase<ArrowBatch>
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);
+  }
+
+  protected NativeCalcOperator createOperator(
+      int[] kinds, int[] payload, int[] childCounts, long[] longs, double[] doubles,
+      String[] strings, int[] projectionRoots, int conditionRoot, String[] outputNames,
+      NativeUdf.Binding udfBinding) {
+    return new NativeCalcOperator(kinds, payload, childCounts, longs, doubles, strings,
+        projectionRoots, conditionRoot, outputNames, udfBinding);
   }
 }

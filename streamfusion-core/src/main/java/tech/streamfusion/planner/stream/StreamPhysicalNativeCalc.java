@@ -9,6 +9,8 @@ import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexProgram;
+import org.apache.calcite.rex.RexUtil;
+import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory$;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
@@ -17,9 +19,11 @@ import tech.streamfusion.operator.NativeUdf;
 import tech.streamfusion.planner.ColumnarInput;
 import tech.streamfusion.planner.ColumnarOutput;
 import tech.streamfusion.planner.ExpressionPlanning;
+import tech.streamfusion.planner.JsonStringIdentity;
 import tech.streamfusion.planner.JvmFunctionConversions;
 import tech.streamfusion.planner.NativeCalcExecNode;
 import tech.streamfusion.planner.common.EncodedExpression;
+import tech.streamfusion.planner.common.ExpressionKind;
 import tech.streamfusion.planner.common.NativePlanDetails;
 
 /**
@@ -45,6 +49,28 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
   // relationships between output expressions; execution uses the encoded, remapped program.
   private final RexProgram sourceProgram;
   private final boolean preserveCollections;
+  private final Calc sourceCalc;
+  private final int[] originalInputMapping;
+  private final AdaptiveText adaptiveText;
+
+  private static final class AdaptiveText {
+    final int[] inputs;
+    final int[] outputs;
+    final NativeUdf.Binding fallback;
+    final long[] fallbackLongs;
+    final boolean generatedOnly;
+    final boolean rowExit;
+
+    AdaptiveText(int[] inputs, int[] outputs, EncodedExpression fallback, boolean generatedOnly,
+        boolean rowExit) {
+      this.inputs = inputs;
+      this.outputs = outputs;
+      this.fallback = fallback.udfBinding();
+      this.fallbackLongs = fallback.longs();
+      this.generatedOnly = generatedOnly;
+      this.rowExit = rowExit;
+    }
+  }
 
   public StreamPhysicalNativeCalc(
       RelOptCluster cluster,
@@ -62,10 +88,16 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
       RelDataType outputRowType,
       EncodedExpression encoded,
       RexProgram sourceProgram) {
-    this(cluster, traitSet, input, outputRowType, encoded, sourceProgram, NativePlanDetails.EMPTY);
+    this(cluster, traitSet, input, outputRowType, encoded, sourceProgram, NativePlanDetails.EMPTY,
+        null, null);
   }
 
   StreamPhysicalNativeCalc(Calc original, RelNode input, EncodedExpression encoded) {
+    this(original, input, encoded, null);
+  }
+
+  StreamPhysicalNativeCalc(Calc original, RelNode input, EncodedExpression encoded,
+      int[] originalInputMapping) {
     this(
         original.getCluster(),
         original.getTraitSet(),
@@ -73,7 +105,9 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
         original.getRowType(),
         encoded,
         original.getProgram(),
-        NativePlanDetails.from(original));
+        NativePlanDetails.from(original),
+        original,
+        originalInputMapping);
   }
 
   private StreamPhysicalNativeCalc(
@@ -83,7 +117,9 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
       RelDataType outputRowType,
       EncodedExpression encoded,
       RexProgram sourceProgram,
-      NativePlanDetails planDetails) {
+      NativePlanDetails planDetails,
+      Calc sourceCalc,
+      int[] originalInputMapping) {
     this(
         cluster,
         traitSet,
@@ -101,7 +137,10 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
         encoded.udfBinding(),
         sourceProgram,
         encoded.requiresCollectionRepresentation(),
-        planDetails.withFunctions(encoded));
+        planDetails.withFunctions(encoded),
+        sourceCalc,
+        originalInputMapping,
+        null);
   }
 
   private StreamPhysicalNativeCalc(
@@ -121,7 +160,10 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
       NativeUdf.Binding udfBinding,
       RexProgram sourceProgram,
       boolean preserveCollections,
-      NativePlanDetails planDetails) {
+      NativePlanDetails planDetails,
+      Calc sourceCalc,
+      int[] originalInputMapping,
+      AdaptiveText adaptiveText) {
     super(cluster, traitSet, input, outputRowType, planDetails);
     this.kinds = kinds;
     this.payload = payload;
@@ -135,6 +177,9 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
     this.udfBinding = udfBinding;
     this.sourceProgram = sourceProgram;
     this.preserveCollections = preserveCollections;
+    this.sourceCalc = sourceCalc;
+    this.originalInputMapping = originalInputMapping;
+    this.adaptiveText = adaptiveText;
   }
 
   RexProgram sourceProgram() {
@@ -151,11 +196,63 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
         kinds, payload, childCounts, projectionRoots, conditionRoot, input, getRowType(), used);
   }
 
+  StreamPhysicalNativeCalc withAdaptiveText(
+      RelNode input, BitSet byteStrings, boolean representedStrings, BitSet outputs,
+      boolean exitsToRows) {
+    if (sourceCalc == null || sourceProgram.getExprList().stream()
+        .anyMatch(ExpressionPlanning::containsUserFunction)) return null;
+    var needed = ByteStringInputs.utf8Inputs(
+        kinds, payload, childCounts, projectionRoots, conditionRoot, byteStrings);
+    if (representedStrings) {
+      for (int column : ExpressionPlanning.referencedInputs(kinds, payload)) {
+        if (byteStrings.get(column)) needed.set(column);
+      }
+    }
+    if (needed.isEmpty()) return null;
+    boolean rowExit = representedStrings || preservesCollections();
+    for (var field : outputRowType.getFieldList()) {
+      var type = field.getType();
+      rowExit |= !SqlTypeFamily.CHARACTER.contains(type) && JsonStringIdentity.containsCharacter(type);
+    }
+    if (rowExit && !exitsToRows) return null;
+    var fallback = ExpressionPlanning.encodeByteBackedHostCalc(sourceCalc);
+    if (fallback == null) return null;
+    for (int i = 0; i < outputRowType.getFieldCount(); i++) {
+      if (fallback.isVariableBinaryProjection(i)) return null;
+    }
+    if (originalInputMapping != null) {
+      int[] fallbackKinds = fallback.kinds();
+      int[] fallbackPayload = fallback.payload();
+      for (int i = 0; i < fallbackKinds.length; i++) {
+        if (fallbackKinds[i] == ExpressionKind.INPUT_REF.code()
+            && originalInputMapping[fallbackPayload[i]] < 0) return null;
+      }
+      fallback = fallback.remapInputs(originalInputMapping);
+    }
+    if (!rowExit) {
+      for (int i = 0; i < outputRowType.getFieldCount(); i++) {
+        if (SqlTypeFamily.CHARACTER.contains(outputRowType.getFieldList().get(i).getType())) {
+          outputs.set(i);
+        }
+      }
+    }
+    // A volatile call site such as RAND(seed) must retain one evaluator across every batch.
+    boolean generatedOnly = ExpressionPlanning.isRowCalc(kinds)
+        || sourceProgram.getExprList().stream()
+            .anyMatch(expression -> !RexUtil.isDeterministic(expression));
+    return new StreamPhysicalNativeCalc(
+        getCluster(), getTraitSet(), input, outputRowType, kinds, payload, childCounts,
+        longs, doubles, strings, projectionRoots, conditionRoot, outputNames, udfBinding,
+        sourceProgram, preserveCollections, planDetails, sourceCalc, originalInputMapping,
+        new AdaptiveText(needed.stream().toArray(), outputs.stream().toArray(), fallback,
+            generatedOnly, rowExit));
+  }
+
   boolean hasStringPassthrough() {
     for (int i = 0; i < projectionRoots.length; i++) {
       if (kinds[projectionRoots[i]] == 0
-          && org.apache.calcite.sql.type.SqlTypeFamily.CHARACTER
-              .contains(getRowType().getFieldList().get(i).getType())) return true;
+          && SqlTypeFamily.CHARACTER.contains(getRowType().getFieldList().get(i).getType()))
+        return true;
     }
     return false;
   }
@@ -191,6 +288,8 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
   public RelWriter explainTerms(RelWriter writer) {
     return super.explainTerms(writer)
         .itemIf("collectionRepresentation", true, preserveCollections)
+        .itemIf("onDemandUtf8", true, adaptiveText != null && !adaptiveText.generatedOnly)
+        .itemIf("byteBackedFlinkEval", true, adaptiveText != null && adaptiveText.generatedOnly)
         .itemIf(
             "jsonEvaluation",
             "JVM",
@@ -223,11 +322,23 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
         udfBinding,
         sourceProgram,
         preserveCollections,
-        planDetails);
+        planDetails,
+        sourceCalc,
+        originalInputMapping,
+        adaptiveText);
   }
 
   @Override
   public ExecNode<?> translateToExecNode() {
+    if (adaptiveText != null) {
+      return new AdaptiveTextCalcExecNode(
+          ShortcutUtils.unwrapTableConfig(this), getRelDetailedDescription(),
+          FlinkTypeFactory$.MODULE$.toLogicalRowType(getInput().getRowType()),
+          FlinkTypeFactory$.MODULE$.toLogicalRowType(getRowType()),
+          kinds, payload, childCounts, longs, doubles, strings, projectionRoots, conditionRoot,
+          outputNames, udfBinding, adaptiveText.inputs, adaptiveText.outputs, adaptiveText.fallback,
+          adaptiveText.fallbackLongs, adaptiveText.generatedOnly, adaptiveText.rowExit);
+    }
     return new NativeCalcExecNode(
         ShortcutUtils.unwrapTableConfig(this),
         InputProperty.DEFAULT,

@@ -37,6 +37,7 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
   private final double[] doubles;
   private final String[] strings;
   private final NativeUdf.Binding udfBinding;
+  private final Calc sourceCalc;
 
   StreamPhysicalNativeFilter(Calc calc, EncodedExpression condition) {
     this(
@@ -52,7 +53,8 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
         condition.doubles(),
         condition.strings(),
         condition.udfBinding(),
-        NativePlanDetails.from(calc).withFunctions(condition));
+        NativePlanDetails.from(calc).withFunctions(condition),
+        calc);
   }
 
   public StreamPhysicalNativeFilter(
@@ -81,7 +83,8 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
         doubles,
         strings,
         udfBinding,
-        NativePlanDetails.EMPTY);
+        NativePlanDetails.EMPTY,
+        null);
   }
 
   private StreamPhysicalNativeFilter(
@@ -97,7 +100,8 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
       double[] doubles,
       String[] strings,
       NativeUdf.Binding udfBinding,
-      NativePlanDetails planDetails) {
+      NativePlanDetails planDetails,
+      Calc sourceCalc) {
     super(cluster, traitSet, input, outputRowType, planDetails);
     this.projection = projection;
     this.kinds = kinds;
@@ -107,6 +111,7 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
     this.doubles = doubles;
     this.strings = strings;
     this.udfBinding = udfBinding;
+    this.sourceCalc = sourceCalc;
   }
 
   BitSet byteStringOutputs(BitSet input) {
@@ -119,6 +124,17 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
       if (input.get(projection[i])) output.set(i);
     }
     return output;
+  }
+
+  StreamPhysicalNativeCalc withAdaptiveText(
+      RelNode input, BitSet byteStrings, boolean representedStrings, BitSet outputs,
+      boolean exitsToRows) {
+    if (sourceCalc == null || !input.getRowType().equals(sourceCalc.getProgram().getInputRowType()))
+      return null;
+    var encoded = CalcMatcher.encode(sourceCalc);
+    return encoded == null ? null
+        : new StreamPhysicalNativeCalc(sourceCalc, input, encoded)
+            .withAdaptiveText(input, byteStrings, representedStrings, outputs, exitsToRows);
   }
 
   boolean hasStringPassthrough() {
@@ -179,7 +195,8 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
         doubles,
         strings,
         udfBinding,
-        planDetails.withProjection(input.getRowType(), output, combined));
+        planDetails.withProjection(input.getRowType(), output, combined),
+        null);
   }
 
   @Override
@@ -197,7 +214,8 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
         doubles,
         strings,
         udfBinding,
-        planDetails);
+        planDetails,
+        sourceCalc);
   }
 
   @Override

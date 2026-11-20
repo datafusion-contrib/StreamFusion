@@ -2,6 +2,7 @@ package tech.streamfusion;
 
 import static org.apache.flink.table.api.DataTypes.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Formatter;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -9,6 +10,7 @@ import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
+import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.functions.SqlLikeUtils;
 import org.apache.flink.table.runtime.functions.SqlFunctionUtils;
 import org.apache.flink.table.runtime.typeutils.RowDataSerializer;
@@ -22,6 +24,58 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 @EnabledIfEnvironmentVariable(named = "SF_BENCHMARK", matches = "true")
 class CertifiedScalarBenchmark {
   private static volatile long consumed;
+
+  @Test
+  void byteBackedText() {
+    int iterations = Integer.getInteger("byte.text.iterations", 256);
+    int warmups = Integer.getInteger("byte.text.warmups", 5);
+    int trials = Integer.getInteger("byte.text.trials", 7);
+    var serializer = new RowDataSerializer((RowType) ROW(FIELD("s", STRING())).getLogicalType());
+    var needle = BinaryStringData.fromString("match");
+    System.out.println("function,input,distribution,bytes,trial,warmup,ns_per_row,checksum");
+    for (String mode : new String[] {"ascii", "unicode", "mixed"}) {
+      for (int width : new int[] {24, 192, 768}) {
+        String prefix = mode.equals("ascii") ? "a".repeat(width) : "中".repeat(width / 3);
+        var generic = new RowData[1024];
+        var binary = new RowData[1024];
+        for (int row = 0; row < generic.length; row++) {
+          var bytes = (prefix + (row % 2 == 0 ? "match" : "other")).getBytes(StandardCharsets.UTF_8);
+          if (mode.equals("mixed") && row % 1000 == 1) bytes[0] = (byte) 0xff;
+          generic[row] = GenericRowData.of(row % 31 == 0 ? null : BinaryStringData.fromBytes(bytes));
+          binary[row] = serializer.toBinaryRow(generic[row]).copy();
+        }
+        for (boolean binaryRows : new boolean[] {false, true}) {
+          var rows = binaryRows ? binary : generic;
+          for (boolean length : new boolean[] {true, false}) {
+            for (int trial = 0; trial < warmups + trials; trial++) {
+              long checksum = 0;
+              long start = System.nanoTime();
+              for (int iteration = 0; iteration < iterations; iteration++) {
+                for (RowData row : rows) {
+                  if (row.isNullAt(0)) continue;
+                  var value = (BinaryStringData) row.getString(0);
+                  checksum += length ? value.numChars() : SqlFunctionUtils.position(needle, value);
+                }
+              }
+              double ns = (System.nanoTime() - start) / (double) (iterations * rows.length);
+              consumed = checksum;
+              System.out.printf(
+                  Locale.ROOT,
+                  "%s,%s,%s,%d,%d,%s,%.3f,%d%n",
+                  length ? "CHAR_LENGTH" : "POSITION",
+                  binaryRows ? "binary" : "generic",
+                  mode,
+                  width + 5,
+                  trial,
+                  trial < warmups,
+                  ns,
+                  checksum);
+            }
+          }
+        }
+      }
+    }
+  }
 
   @Test
   void preparedProductionFunctions() {

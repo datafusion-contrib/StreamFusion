@@ -33,6 +33,7 @@ memchr.workspace = true
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
 simd-json.workspace = true
+simdutf8.workspace = true
 stacker = "0.1.24"
 zstd = "0.13"
 lz4_flex = "0.13"

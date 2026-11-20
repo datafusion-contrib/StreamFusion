@@ -200,6 +200,7 @@ final class RexExpression implements EncodedExpression {
   private RexNode projectionRoot;
   private int binaryUdfCalls;
   private boolean rowFusion;
+  private boolean byteBackedRowResult;
   private boolean calcProjection;
   private boolean unnestOperand;
   private boolean preserveCollections;
@@ -355,8 +356,13 @@ final class RexExpression implements EncodedExpression {
   }
 
   static RexExpression encodeHostCalc(Calc calc, String reason) {
+    return encodeHostCalc(calc, reason, false);
+  }
+
+  static RexExpression encodeHostCalc(Calc calc, String reason, boolean byteBackedRowResult) {
     var encoder = forCalc(calc);
     encoder.jvmExecutionReason = reason;
+    encoder.byteBackedRowResult = byteBackedRowResult;
     return encoder.emitRowCalc(calc) ? encoder : null;
   }
 
@@ -1133,7 +1139,8 @@ final class RexExpression implements EncodedExpression {
         if (!validateDecimalRoundingBoundary(projection)) return false;
         if (!validateGeneratedExpression(projection)) return false;
         if (JsonStringIdentity.containsCharacter(projection.getType())
-            && JsonStringIdentity.containsBinaryString(projection)) {
+            && JsonStringIdentity.containsBinaryString(projection)
+            && !(byteBackedRowResult && SqlTypeFamily.CHARACTER.contains(projection.getType()))) {
           return reject("binary-backed STRING requires a final scalar projection");
         }
         if (LegacyBinaryResults.variableResult(

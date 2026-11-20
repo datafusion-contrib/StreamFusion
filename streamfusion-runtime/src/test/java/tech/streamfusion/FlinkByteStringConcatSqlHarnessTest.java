@@ -97,10 +97,6 @@ class FlinkByteStringConcatSqlHarnessTest {
   @ParameterizedTest
   @ValueSource(
       strings = {
-        "SELECT CONCAT(s, '!') FROM src WHERE s = 'a'",
-        "SELECT LOWER(CONCAT(s, '!')) FROM src",
-        "SELECT CONCAT(s, '!'), LOWER(t) FROM src",
-        "SELECT LOWER(s) FROM timed_src",
         "SELECT CONCAT(s, '!') FROM src WHERE id = 0 "
             + "UNION ALL SELECT CAST('ok' AS STRING) FROM (VALUES (0))",
         "SELECT CONCAT(s, '!'), COUNT(*) FROM src GROUP BY CONCAT(s, '!')"
@@ -114,10 +110,56 @@ class FlinkByteStringConcatSqlHarnessTest {
     }
   }
 
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "SELECT LOWER(CONCAT(s, '!')) AS v FROM src WHERE id <> -1",
+        "SELECT LOWER(s) AS v FROM timed_src",
+        "SELECT TRIM(s) AS v FROM src",
+        "SELECT REPLACE(s, 'a', 'é') AS v FROM src",
+        "SELECT CONCAT(TO_BASE64(t), REPLACE(s, 'a', 'b')) AS v FROM src",
+        "SELECT REPEAT(s, 2) AS v FROM src",
+        "SELECT REVERSE(s) AS v FROM src WHERE id % 10 NOT IN (1, 2)",
+        "SELECT SPLIT_INDEX(s, 'a', 0) AS v FROM src",
+        "SELECT LPAD(s, 5, 'x') AS v FROM src WHERE id % 10 NOT IN (1, 2)",
+        "SELECT REGEXP_REPLACE(s, 'a', 'x') AS v FROM src",
+        "SELECT s AS v FROM src WHERE s LIKE 'a%'",
+        "SELECT CONCAT(s, '!') AS v FROM src WHERE s = 'abc'",
+        "SELECT SUBSTRING(s, 1, 1) AS v FROM src WHERE id % 10 <> 2"
+      })
+  void mixedTextKeepsBothRoutesInTheSameCalc(String sql) throws Exception {
+    assertEquals(run(sql, false), run(sql, Route.ADAPTIVE, Result.STRING));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"'a'", "''", "delim"})
+  void mixedSplitPreservesNestedBytesAndJavaStrings(String separator) throws Exception {
+    tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("SPLIT");
+    String sql = "SELECT SPLIT(s, " + separator + ") AS v FROM src";
+    assertEquals(run(sql, Route.HOST, Result.STRING_ARRAY), run(sql, Route.ADAPTIVE, Result.STRING_ARRAY));
+  }
+
   @Test
-  void unsupportedCompositionUsesStockBeforeStringBytesEnterArrow() throws Exception {
-    String sql = "SELECT LOWER(CONCAT(s, '!')) AS v FROM src WHERE id <> -1";
-    assertEquals(run(sql, false), run(sql, Route.FALLBACK, Result.STRING));
+  void seededTextFilterKeepsOneGeneratedEvaluatorAcrossBatches() throws Exception {
+    String sql = "SELECT LOWER(s) AS v FROM src WHERE RAND(42) < 0.5";
+    assertEquals(run(sql, false), run(sql, Route.EXACT, Result.STRING));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"REVERSE(s)", "SUBSTRING(s, 1, 1)"})
+  void truncatedTextRetainsFlinkResultsOrFailure(String expression) {
+    String sql = "SELECT " + expression + " AS v FROM src WHERE id < 3";
+    assertEquals(outcome(sql, Route.HOST), outcome(sql, Route.ADAPTIVE));
+  }
+
+  private static Object outcome(String sql, Route route) {
+    try {
+      return run(sql, route, Result.STRING);
+    } catch (Exception failure) {
+      Throwable cause = failure;
+      while (cause.getCause() != null) cause = cause.getCause();
+      return cause.getClass();
+    }
   }
 
   @Test
@@ -151,11 +193,14 @@ class FlinkByteStringConcatSqlHarnessTest {
   private enum Route {
     HOST,
     NATIVE,
+    ADAPTIVE,
+    EXACT,
     FALLBACK
   }
 
   private enum Result {
     STRING,
+    STRING_ARRAY,
     INTEGER,
     PASSTHROUGH
   }
@@ -179,11 +224,13 @@ class FlinkByteStringConcatSqlHarnessTest {
       var table = source(metrics, timed);
       table.createTemporarySystemFunction("emit_bytes", EmitBytes.class);
       var scan = route == Route.HOST ? null : NativePlanner.install(table);
-      if (route == Route.NATIVE) {
+      if (route == Route.NATIVE || route == Route.ADAPTIVE || route == Route.EXACT) {
         String plan = table.explainSql(sql);
         assertTrue(plan.contains("byteStrings="), () -> plan + scan.fallbackReasons());
         assertTrue(plan.contains(nativeOperator), plan);
         assertTrue(plan.contains("RowDataToArrow"), plan);
+        if (route == Route.ADAPTIVE) assertTrue(plan.contains("onDemandUtf8=[true]"), plan);
+        if (route == Route.EXACT) assertTrue(plan.contains("byteBackedFlinkEval=[true]"), plan);
         if (timed) assertTrue(plan.contains("NativeWatermarkAssigner"), plan);
         if (sql.contains("UNION ALL")) assertTrue(plan.contains("NativeUnion"), plan);
       } else if (route == Route.FALLBACK) {
@@ -196,7 +243,8 @@ class FlinkByteStringConcatSqlHarnessTest {
               table.sqlQuery(sql),
               (result == Result.PASSTHROUGH
                       ? ROW(FIELD("original", STRING()), FIELD("v", STRING()))
-                      : ROW(FIELD("v", result == Result.INTEGER ? INT() : STRING())))
+                      : ROW(FIELD("v", result == Result.INTEGER ? INT()
+                          : result == Result.STRING_ARRAY ? ARRAY(STRING()) : STRING())))
                   .bridgedTo(RowData.class));
       var actual = new ArrayList<String>();
       try (var results =
@@ -207,6 +255,16 @@ class FlinkByteStringConcatSqlHarnessTest {
                       return rawString(row, 0) + ":" + rawString(row, 1);
                     if (result == Result.INTEGER && !row.isNullAt(0))
                       return Integer.toString(row.getInt(0));
+                    if (result == Result.STRING_ARRAY && !row.isNullAt(0)) {
+                      var array = row.getArray(0);
+                      var values = new ArrayList<String>();
+                      for (int i = 0; i < array.size(); i++) {
+                        var value = array.getString(i);
+                        values.add(Base64.getEncoder().encodeToString(value.toBytes()) + ":"
+                            + java.util.Arrays.toString(value.toString().chars().toArray()));
+                      }
+                      return values.toString();
+                    }
                     return rawString(row, 0);
                   })
               .returns(org.apache.flink.api.common.typeinfo.Types.STRING)
@@ -223,6 +281,12 @@ class FlinkByteStringConcatSqlHarnessTest {
         if (timed) {
           RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeWatermarkAssigner");
         }
+      } else if (route == Route.ADAPTIVE || route == Route.EXACT) {
+        assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
+        if (route == Route.ADAPTIVE) assertTrue(metrics.counterValue("validatedTextRows") > 0, sql);
+        else assertEquals(0, metrics.counterValue("validatedTextRows"), sql);
+        assertTrue(metrics.counterValue("flinkTextRows") > 0, sql);
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), nativeOperator);
       }
       return actual;
     }
@@ -239,7 +303,7 @@ class FlinkByteStringConcatSqlHarnessTest {
     var table = StreamTableEnvironment.create(env);
     var fields = new ArrayList<>(
         List.of(FIELD("id", INT()), FIELD("s", STRING()), FIELD("t", STRING()),
-            FIELD("unused", STRING())));
+            FIELD("unused", STRING()), FIELD("delim", STRING())));
     if (timed) fields.add(FIELD("rt", TIMESTAMP(3)));
     var type = ROW(fields.toArray(new org.apache.flink.table.api.DataTypes.Field[0]));
     List<RowData> rows = new ArrayList<>();
@@ -250,7 +314,8 @@ class FlinkByteStringConcatSqlHarnessTest {
       row.setField(1, value == null ? null : BinaryStringData.fromBytes(value));
       row.setField(2, i % 7 == 0 ? null : BinaryStringData.fromBytes(new byte[] {(byte) 0xa9}));
       row.setField(3, BinaryStringData.fromBytes(new byte[] {(byte) 0xff}));
-      if (timed) row.setField(4, TimestampData.fromEpochMillis(1000L + i));
+      row.setField(4, BinaryStringData.fromBytes(i % 2 == 0 ? new byte[] {'a'} : new byte[0]));
+      if (timed) row.setField(5, TimestampData.fromEpochMillis(1000L + i));
       rows.add(row);
     }
     var schema = Schema.newBuilder().fromRowDataType(type);

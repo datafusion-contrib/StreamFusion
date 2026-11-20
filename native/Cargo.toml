@@ -90,6 +90,7 @@ ahash = "0.8"
 # arrow-json's scalar tokenizer on the hot ingest edge (RisingWave uses the same parser family).
 # Runtime CPU detection on x86, NEON on aarch64 — nothing machine-specific in the build.
 simd-json = "0.17"
+simdutf8 = "0.1"
 # CSV record splitting for the Kafka CSV decode (delimiter/quote/escape/comment handling). arrow-csv's
 # reader has a fixed value envelope (empty→null, truncating decimals, no trimming) that can't be
 # configured into Flink's, so the decode splits records with csv-core and converts each field with the

@@ -61,6 +61,7 @@ mod boolean_string;
 pub(crate) mod byte_ascii;
 pub(crate) mod byte_concat;
 pub(crate) mod byte_concat_ws;
+pub(crate) mod byte_string_text;
 mod cardinality;
 mod charset;
 mod chr;

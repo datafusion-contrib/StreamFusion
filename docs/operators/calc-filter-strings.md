@@ -296,7 +296,8 @@ see [release measurements](../benchmarks/scalar-functions.md#runtime-sha2-widths
 ### Byte-preserving string input {#byte-preserving-string-input}
 
 A streaming native Calc can carry STRING inputs as Arrow Binary when every consumer has a
-verified byte contract. Supported operations include direct projection, `IS NULL`,
+verified byte contract or a compatible text path. Supported byte operations include direct
+projection, `IS NULL`,
 `IS NOT NULL`, `CONCAT` / `||`, `CONCAT_WS`, `MD5`, `SHA1`, `SHA224`, `SHA256`,
 `SHA384`, `SHA512`, `TO_BASE64`, and `ASCII`.
 Nested concatenations, runtime separators, character constants and simple
@@ -306,6 +307,12 @@ empty batches. TO_BASE64 also consumes the original bytes and returns valid ASCI
 can feed text predicates or another expression within the Calc.
 ASCII reads only the first byte and sign-extends it like Flink's Java byte; empty strings yield zero
 and NULL remains NULL. Its integer output can also be used in a native filter over malformed input.
+`CHAR_LENGTH` / `CHARACTER_LENGTH` and two-argument `POSITION(needle IN s)` have
+specialized native kernels for byte-backed strings. An ASCII length batch uses the Arrow
+offsets directly. Other inputs use Unicode code points for valid values and Flink's
+leading-byte traversal for malformed ones. Malformed `E0 51 51`, for example, has length 1,
+and neither `51` is a POSITION match because neither begins a character in Flink.
+An empty search string has position 1, a miss has position 0, and NULL propagates.
 SHA2 with a literal width of 224, 256, 384 or 512 lowers to the matching digest and has the same byte
 contract. Runtime, NULL and invalid SHA2 widths retain their existing representation and error path;
 they are not included in this arbitrary-byte admission.
@@ -315,8 +322,8 @@ batches. `EXPLAIN` identifies the input columns with `byteStrings=[...]`. There 
 
 The SQL type remains STRING. The transpose copies the original `StringData` bytes into a Binary
 vector marked `streamfusion.logical_string=1`; the native concatenation kernels consume bytes directly,
-preserve their NULL rules, and return Binary to the final row exit. No UTF-8 validation, replacement decode,
-or JVM callback is needed. The exit can borrow Binary-backed string bytes for synchronous consumers,
+preserve their NULL rules, and return Binary to the final row exit without scanning strings for UTF-8.
+The exit can borrow Binary-backed string bytes for synchronous consumers,
 with the same ownership rule as Utf8. CONCAT output is byte-backed without a Java string cache,
 matching Flink's concatenation helpers. `CONCAT_WS` returns NULL only when its separator is NULL;
 it skips NULL values but retains empty values and their separators. A separator alone, or only
@@ -334,13 +341,35 @@ expose a Java cache across the union. A numeric filter can forward
 a STRING unchanged. A projection can drop a byte-backed column or consume it in an operation
 that produces a different representation, such as ASCII. The planner can then admit other
 native operators that only see the resulting ordinary Arrow columns. Surviving byte-backed
-STRING columns can leave through the final row exit. Admission requires scalar input fields and
-compatible non-JVM expressions wherever a Calc receives these columns. Passthrough projections
+STRING columns can leave through the final row exit. Passthrough projections
 preserve the original bytes and their optional Java UTF-16 caches. A filter that projects the
 same column under multiple names stores those names separately from the deployed filter's
 existing serialized configuration.
 `FROM_BASE64` can also read this representation in final projections. Its decoded result and
 wider compositions follow the existing [FROM_BASE64](#from_base64) rules.
+
+### On-demand UTF-8 for text expressions {#on-demand-utf8-for-text-expressions}
+
+Streaming Calc uses the same UTF-8 adapter for supported text expressions over byte-backed
+scalar input columns, including predicates and nested expressions. The planner identifies
+which input bytes reach expressions that require text. Passthrough and byte-only inputs
+can remain Binary. `EXPLAIN` shows `onDemandUtf8=[true]` when the adapter is selected.
+
+A SIMD scan checks the bytes and each value boundary. Consecutive valid rows with no
+original Java string cache can reuse the same Arrow buffers with a temporary
+`Utf8` schema and run through the existing native Calc. Malformed rows and rows with an
+observable Java cache use the generated Flink evaluator over the original bytes. Ranges
+run in input order and preserve changelog tags. A downstream columnar Calc receives a
+consistent Binary schema for scalar string results.
+Calcs that require a single generated evaluator across batches use that evaluator directly
+on the bytes. Their plans show `byteBackedFlinkEval=[true]`.
+
+At a final row exit the adapter also supports collection results such as `SPLIT`.
+The generated evaluator writes string leaves as Binary with the original Java caches
+where Flink exposes them. The row reader consumes either lane's result directly.
+The adapter uses the existing expression and boundary checks for nested input,
+intermediate represented results, user-defined functions, stateful operators and compiled plans. See the
+[release measurements](../benchmarks/scalar-functions.md#on-demand-utf-8-validation).
 
 Generic Flink row sources can emit arbitrary string bytes, including strings nested in collections.
 For unsupported compositions or relational consumers, the planner requires a verified UTF-8

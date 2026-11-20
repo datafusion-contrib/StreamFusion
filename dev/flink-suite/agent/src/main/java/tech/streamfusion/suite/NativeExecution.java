@@ -237,6 +237,7 @@ public final class NativeExecution {
   static String operatorKind(Object operator) {
     Class<?> type = operator.getClass();
     return type.getName().equals("tech.streamfusion.operator.NativeAliasedFilterOperator")
+            || type.getName().equals("tech.streamfusion.operator.AdaptiveTextCalcOperator")
         ? type.getSuperclass().getSimpleName()
         : type.getSimpleName();
   }

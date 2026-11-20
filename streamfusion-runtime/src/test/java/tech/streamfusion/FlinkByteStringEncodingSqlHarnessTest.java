@@ -35,4 +35,21 @@ class FlinkByteStringEncodingSqlHarnessTest {
   void asciiWidensTheFirstSignedByte(String sql) throws Exception {
     assertEquals(runIntegers(sql, false), runIntegers(sql, true));
   }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "SELECT CHAR_LENGTH(s) AS v FROM src",
+        "SELECT CHARACTER_LENGTH(CONCAT(s, t)) AS v FROM src",
+        "SELECT CHAR_LENGTH(s) AS v FROM src WHERE id % 10 >= 5",
+        "SELECT CHAR_LENGTH(s) AS v FROM timed_src WHERE CHAR_LENGTH(s) > 0",
+        "SELECT CHAR_LENGTH(s) AS v FROM src WHERE id = -1",
+        "SELECT POSITION(t IN s) AS v FROM src",
+        "SELECT POSITION('中' IN s) AS v FROM src",
+        "SELECT POSITION(s IN 'é') AS v FROM src",
+        "SELECT POSITION('' IN s) AS v FROM src"
+      })
+  void textOperatorsMatchFlinkOnValidAndMixedBatches(String sql) throws Exception {
+    assertEquals(runIntegers(sql, false), runIntegers(sql, true));
+  }
 }

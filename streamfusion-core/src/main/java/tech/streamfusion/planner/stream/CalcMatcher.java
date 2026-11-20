@@ -144,7 +144,7 @@ final class CalcMatcher {
         var projected =
             ((StreamPhysicalNativeUnnest) input)
                 .withProjection(input.getTraitSet(), used.inputType, kept);
-        return new StreamPhysicalNativeCalc(calc, projected, encoded.remapInputs(used.remap));
+        return new StreamPhysicalNativeCalc(calc, projected, encoded.remapInputs(used.remap), used.remap);
       }
     }
     // Nested projection pushdown: when the input is rowwise (about to be transposed) and the calc
@@ -160,7 +160,7 @@ final class CalcMatcher {
       ProjectableNativeSource source = (ProjectableNativeSource) input;
       if (source.supportsProjection(pruned.inputType)) {
         return new StreamPhysicalNativeCalc(
-            calc, source.withProjection(pruned.inputType), encoded.remapInputs(pruned.remap));
+            calc, source.withProjection(pruned.inputType), encoded.remapInputs(pruned.remap), pruned.remap);
       }
     }
     if (pruned != null && !(input instanceof ColumnarOutput)) {
@@ -176,7 +176,7 @@ final class CalcMatcher {
               carryRowKind,
               pruned.inputType,
               encoded.requiresCollectionRepresentation());
-      return new StreamPhysicalNativeCalc(calc, prunedTranspose, encoded.remapInputs(pruned.remap));
+      return new StreamPhysicalNativeCalc(calc, prunedTranspose, encoded.remapInputs(pruned.remap), pruned.remap);
     }
     // The mini-batch assigner is a pass-through (it forwards batches untouched), so it must not
     // hide a rowwise input from the pruning above: push the pruned entry transpose through it.
@@ -201,7 +201,7 @@ final class CalcMatcher {
         return new StreamPhysicalNativeCalc(
             calc,
             assigner.withInput(prunedTranspose, pruned.inputType),
-            encoded.remapInputs(pruned.remap));
+            encoded.remapInputs(pruned.remap), pruned.remap);
       }
     }
     return new StreamPhysicalNativeCalc(calc, input, encoded);

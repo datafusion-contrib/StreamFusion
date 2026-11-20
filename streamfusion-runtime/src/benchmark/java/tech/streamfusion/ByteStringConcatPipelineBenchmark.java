@@ -38,6 +38,11 @@ class ByteStringConcatPipelineBenchmark {
     run("s", true);
   }
 
+  @Test
+  void mixedTextThroughWatermarkToRowSink() throws Exception {
+    run("REPLACE(s, 'a', 'b')", true);
+  }
+
   private static void run(String projection, boolean watermark) throws Exception {
     int count = Integer.getInteger("byte.concat.rows", 2_000_000);
     int width = Integer.getInteger("byte.concat.width", 16);
@@ -78,6 +83,7 @@ class ByteStringConcatPipelineBenchmark {
           String sql = "INSERT INTO output_rows SELECT " + projection + " FROM src"
               + (watermark ? " WHERE id < " + count / 2 : "");
           String expectedOperator = projection.equals("s") ? "NativeFilter" : "NativeCalc";
+          boolean adaptive = projection.startsWith("REPLACE");
           if (nativeRun) {
             var scan = NativePlanner.install(table);
             String plan = table.explainSql(sql);
@@ -86,6 +92,7 @@ class ByteStringConcatPipelineBenchmark {
             assertTrue(plan.contains("RowDataToArrow"), plan);
             assertTrue(plan.contains("ArrowToRowData"), plan);
             assertTrue(plan.contains("byteStrings="), plan);
+            if (adaptive) assertTrue(plan.contains("onDemandUtf8=[true]"), plan);
             assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
           }
           long start = System.nanoTime();
@@ -93,10 +100,15 @@ class ByteStringConcatPipelineBenchmark {
           double seconds = (System.nanoTime() - start) / 1e9;
           if (nativeRun)
             RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), expectedOperator);
+          if (nativeRun && adaptive) {
+            assertTrue(metrics.counterValue("validatedTextRows") > 0);
+            assertTrue(metrics.counterValue("flinkTextRows") > 0);
+          }
           System.out.printf(
               Locale.ROOT,
               "%s%s,%s,%d,%d,%s,%d,%s,%.9f%n",
-              projection.equals("s") ? "byte_filter_pipeline" : "byte_concat_pipeline",
+              adaptive ? "adaptive_text_pipeline"
+                  : projection.equals("s") ? "byte_filter_pipeline" : "byte_concat_pipeline",
               watermark ? "_watermark" : "",
               nativeRun ? "native" : "flink",
               count,

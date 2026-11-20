@@ -30,8 +30,9 @@ final class GeneratedUnnestMatcher {
         && FilterCalcMatcher.convertibleRow(node.getRowType())
         && verifiedInput(node.getInput())
         && ((RexCall) node.scan().getCall())
-            .getOperands().stream().noneMatch(GeneratedUnnestMatcher::containsUserFunction)
-        && (!node.condition().isDefined() || !containsUserFunction(node.condition().get()));
+            .getOperands().stream().noneMatch(ExpressionPlanning::containsUserFunction)
+        && (!node.condition().isDefined()
+            || !ExpressionPlanning.containsUserFunction(node.condition().get()));
   }
 
   private static boolean usesCollectionExpression(StreamPhysicalCorrelate node) {
@@ -40,17 +41,6 @@ final class GeneratedUnnestMatcher {
                 .anyMatch(ExpressionPlanning::containsGeneratedCollectionFunction)
         || node.condition().isDefined()
             && ExpressionPlanning.containsGeneratedCollectionFunction(node.condition().get());
-  }
-
-  private static boolean containsUserFunction(RexNode expression) {
-    if (expression instanceof org.apache.calcite.rex.RexFieldAccess)
-      return containsUserFunction(
-          ((org.apache.calcite.rex.RexFieldAccess) expression).getReferenceExpr());
-    if (!(expression instanceof RexCall)) return false;
-    var call = (RexCall) expression;
-    if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null)
-      return true;
-    return call.getOperands().stream().anyMatch(GeneratedUnnestMatcher::containsUserFunction);
   }
 
   static boolean preservedInput(RelNode node) {

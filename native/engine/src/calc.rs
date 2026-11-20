@@ -970,6 +970,40 @@ pub extern "system" fn Java_tech_streamfusion_Native_calcExpressionAtWatermark<'
     })
 }
 
+/// Classifies byte-backed columns without changing any Arrow buffers or evaluating expressions.
+#[no_mangle]
+pub extern "system" fn Java_tech_streamfusion_Native_invalidUtf8Rows<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    in_array_address: jlong,
+    in_schema_address: jlong,
+    columns: JIntArray<'local>,
+) -> jni::sys::jintArray {
+    crate::bridge::jni_guard(env, move |env| {
+        let batch = import_record_batch(in_array_address, in_schema_address);
+        let mut invalid = vec![false; batch.num_rows()];
+        for column in read_int_array(&env, &columns) {
+            let input = datafusion::common::cast::as_binary_array(batch.column(column as usize))
+                .expect_flink("UTF-8 validation requires byte-backed strings");
+            crate::flink_functions::byte_string_text::mark_invalid_utf8(input, &mut invalid);
+        }
+        let invalid: Vec<i32> = invalid
+            .into_iter()
+            .enumerate()
+            .filter_map(|(row, invalid)| invalid.then_some(row as i32))
+            .collect();
+        if invalid.is_empty() {
+            return std::ptr::null_mut();
+        }
+        let result = env
+            .new_int_array(invalid.len() as i32)
+            .expect("allocate invalid rows");
+        env.set_int_array_region(&result, 0, &invalid)
+            .expect("write invalid rows");
+        result.into_raw()
+    })
+}
+
 /// Runs a later batch through a Calc after the first call established its immutable input schema.
 /// Only the ArrowArray crosses the boundary; the compiled handle supplies the cached struct type.
 #[no_mangle]
