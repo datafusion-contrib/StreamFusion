@@ -261,6 +261,9 @@ pub(crate) fn copyable(data_type: &DataType) -> bool {
         | DataType::LargeBinary
         | DataType::FixedSizeBinary(_) => true,
         DataType::Struct(fields) => fields.iter().all(|field| copyable(field.data_type())),
+        DataType::List(field) | DataType::LargeList(field) | DataType::Map(field, _) => {
+            copyable(field.data_type())
+        }
         _ => false,
     }
 }
@@ -282,8 +285,37 @@ pub extern "system" fn Java_tech_streamfusion_Native_supportsBoundedSorterSchema
     })
 }
 
-/// Compact take owns every admitted payload buffer, including sliced output batches. Copying
-/// buffers verbatim would retain/copy the full sort run for each small output slice.
+/// Charge only the child element range owned by a compacted variable-length payload.
+fn compacted_slice_size(data: &arrow::array::ArrayData) -> Result<usize, arrow::error::ArrowError> {
+    let validity = data.nulls().map_or(0, |_| data.len().div_ceil(8));
+    let child_range = |start: usize, end: usize, offset_bytes: usize| {
+        let child = data.child_data()[0].slice(start, end - start);
+        Ok(compacted_slice_size(&child)? + (data.len() + 1) * offset_bytes + validity)
+    };
+    match data.data_type() {
+        DataType::List(_) | DataType::Map(_, _) => {
+            let offsets = data.buffers()[0].typed_data::<i32>();
+            child_range(
+                offsets[data.offset()] as usize,
+                offsets[data.offset() + data.len()] as usize,
+                4,
+            )
+        }
+        DataType::LargeList(_) => {
+            let offsets = data.buffers()[0].typed_data::<i64>();
+            child_range(
+                offsets[data.offset()] as usize,
+                offsets[data.offset() + data.len()] as usize,
+                8,
+            )
+        }
+        DataType::Struct(_) => data.child_data().iter().try_fold(validity, |bytes, child| {
+            Ok(bytes + compacted_slice_size(child)?)
+        }),
+        _ => data.get_slice_memory_size(),
+    }
+}
+
 fn copy_budget(batch: &RecordBatch) -> Result<usize, DataFusionError> {
     let mut budget = batch
         .num_rows()
@@ -292,7 +324,7 @@ fn copy_budget(batch: &RecordBatch) -> Result<usize, DataFusionError> {
         .ok_or_else(|| DataFusionError::Execution("bounded Arrow copy size overflow".into()))?;
     for column in batch.columns() {
         let data = column.to_data();
-        let size = data.get_slice_memory_size()?;
+        let size = compacted_slice_size(&data)?;
         let overhead = data
             .get_array_memory_size()
             .saturating_sub(data.get_buffer_memory_size());
@@ -304,6 +336,7 @@ fn copy_budget(batch: &RecordBatch) -> Result<usize, DataFusionError> {
     Ok(budget)
 }
 
+/// Compact take owns every admitted payload buffer, including sliced output batches.
 pub(crate) fn compact_copy(
     batch: &RecordBatch,
     reservation: &MemoryReservation,

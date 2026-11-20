@@ -66,6 +66,33 @@ Normal Sink V2, dynamic SQL sinks, unsupported schema conversions or Flink const
 and unsupported sink abilities retain stock SQL writes. Iceberg's direct dynamic Arrow sink and
 maintenance jobs have their own entry points described below.
 
+### Nested batch hash join with native Iceberg I/O
+
+The bounded join can carry Iceberg ROW, ARRAY, and MAP payloads with scalar join
+keys. The Arrow execution schema carries the SQL fields used by the file reader
+and writer. Iceberg's hash router continues to select the writer channel. The
+stateless bounded writer receives that channel directly without a keyed-input sort.
+
+An Apple M4 release run joined two tables of one million rows each, at parallelism
+four with four input files per table and four output partitions. The job committed
+one million rows in **11.378 s** with **256 MiB** of task off-heap memory. The hash
+join wrote 256 spill files totaling **3,106,212,320 bytes**. The test checked both
+native source scans, the native Parquet footer on every output file, and every
+committed nested value, including null rows, null list elements, map values, and
+microsecond timestamps. The default regression uses 96,000 rows per side and
+96 MiB. The same test accepts `-Dsf.iceberg.join.rowsPerFile=250000` and
+`-Dsf.iceberg.join.memoryMiB=256` to reproduce the larger fixture.
+
+The spilling path also completed TPC-DS Q72 at **1 GiB**, a budget the earlier
+hash join exhausted. With the same budget on stock Flink, three measured pairs
+had medians of **38.519 s stock** and **44.607 s StreamFusion**. StreamFusion
+was 15.8% slower. All eight trials, including warmups, committed the same
+100 rows. The result occupied one of the four configured output partitions.
+Every native trial used 40 native scan tasks, wrote one native Parquet file,
+and recorded 256 hash partition spills totaling about 978 MB. The measured
+ranges were 38.486–38.918 s stock and 44.437–45.684 s StreamFusion.
+[Per-run results](../benchmarks/results/iceberg-tpcds-q72-spill-20261120.csv).
+
 ### TPC-DS scale 1 comparison, 2026-11-20
 
 This comparison uses all 103 SQL variants and 24 table definitions from the

@@ -43,7 +43,7 @@ final class IcebergSinkAdapter {
       ReadableConfig configuration,
       Map<String, String> options,
       IcebergTaskWriterFactory.Decorator decorator) {
-    return append(input, table, loader, configuration, options, null, decorator);
+    return append(input, table, loader, configuration, options, null, false, decorator);
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
@@ -54,6 +54,7 @@ final class IcebergSinkAdapter {
       ReadableConfig configuration,
       Map<String, String> options,
       String uidPrefix,
+      boolean bounded,
       IcebergTaskWriterFactory.Decorator decorator) {
     if (!compatible()) {
       throw new IllegalArgumentException("Iceberg writer adapter requires released Iceberg 1.12.0");
@@ -90,7 +91,7 @@ final class IcebergSinkAdapter {
           && table.schema().identifierFieldIds().isEmpty()) {
         adaptRangeInput((OneInputTransformation) transformation, table);
       } else {
-        adaptHashInput((OneInputTransformation) transformation, input, table);
+        adaptHashInput((OneInputTransformation) transformation, input, table, bounded);
       }
       Field field = field(operator.getClass(), "taskWriterFactory");
       try {
@@ -210,7 +211,7 @@ final class IcebergSinkAdapter {
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   private static void adaptHashInput(
-      OneInputTransformation writer, DataStream<ArrowBatch> input, Table table) {
+      OneInputTransformation writer, DataStream<ArrowBatch> input, Table table, boolean bounded) {
     var selector = writer.getStateKeySelector();
     if (selector == null) return;
     if (!(writer.getInputs().get(0) instanceof PartitionTransformation)) {
@@ -251,8 +252,11 @@ final class IcebergSinkAdapter {
     } catch (IllegalAccessException e) {
       throw new IllegalStateException("Cannot adapt the released Iceberg batch exchange", e);
     }
-    writer.setStateKeySelector(new tech.streamfusion.operator.ArrowBatchSubtaskKeySelector(max));
-    writer.setStateKeyType(org.apache.flink.api.common.typeinfo.Types.INT);
+    // Input routing is already enforced by the partition transformation. The released writer
+    // keeps no keyed state, so bounded execution does not need Flink's keyed-input sort.
+    writer.setStateKeySelector(
+        bounded ? null : new tech.streamfusion.operator.ArrowBatchSubtaskKeySelector(max));
+    writer.setStateKeyType(bounded ? null : org.apache.flink.api.common.typeinfo.Types.INT);
     writer.setMaxParallelism(max);
   }
 

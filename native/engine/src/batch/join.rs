@@ -2,13 +2,58 @@ use crate::batch::exec::BoundedInput;
 use crate::batch::task::{bounded_context, copyable, throw_error, BoundedTask};
 use crate::*;
 use datafusion::common::{JoinSide, JoinType, NullEquality};
+use datafusion::physical_expr::{LexOrdering, PhysicalExprRef, PhysicalSortExpr};
 use datafusion::physical_plan::aggregates::{AggregateExec, AggregateMode, PhysicalGroupBy};
 use datafusion::physical_plan::joins::utils::{ColumnIndex, JoinFilter};
 use datafusion::physical_plan::joins::{
     HashJoinExec, NestedLoopJoinExec, PartitionMode, SortMergeJoinExec,
 };
 use datafusion::physical_plan::projection::ProjectionExec;
+use datafusion::physical_plan::sorts::sort::SortExec;
 use datafusion::physical_plan::ExecutionPlan;
+
+mod spill;
+
+fn sorted_join(
+    build: Arc<dyn ExecutionPlan>,
+    probe: Arc<dyn ExecutionPlan>,
+    keys: Vec<(PhysicalExprRef, PhysicalExprRef)>,
+    filter: Option<JoinFilter>,
+    join_type: JoinType,
+    null_equality: NullEquality,
+) -> Result<Arc<dyn ExecutionPlan>, DataFusionError> {
+    let options = SortOptions {
+        descending: false,
+        nulls_first: true,
+    };
+    let (left_order, right_order): (Vec<_>, Vec<_>) = keys
+        .iter()
+        .map(|(left, right)| {
+            (
+                PhysicalSortExpr {
+                    expr: left.clone(),
+                    options,
+                },
+                PhysicalSortExpr {
+                    expr: right.clone(),
+                    options,
+                },
+            )
+        })
+        .unzip();
+    let left = Arc::new(SortExec::new(LexOrdering::new(left_order).unwrap(), build));
+    let right = Arc::new(SortExec::new(LexOrdering::new(right_order).unwrap(), probe));
+    let orders = vec![options; keys.len()];
+    Ok(Arc::new(SortMergeJoinExec::try_new(
+        left,
+        right,
+        keys,
+        filter,
+        join_type,
+        orders,
+        null_equality,
+    )?))
+}
 
 pub(crate) struct JoinPlan {
     inputs: Vec<BoundedInput>,
@@ -170,44 +215,13 @@ impl JoinPlan {
         } else {
             None
         };
+        let null_equality = if null_equals {
+            NullEquality::NullEqualsNull
+        } else {
+            NullEquality::NullEqualsNothing
+        };
         let join: Arc<dyn ExecutionPlan> = if merge_join {
-            use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
-            use datafusion::physical_plan::sorts::sort::SortExec;
-            let options = SortOptions {
-                descending: false,
-                nulls_first: true,
-            };
-            let (left_order, right_order): (Vec<_>, Vec<_>) = keys
-                .iter()
-                .map(|(left, right)| {
-                    (
-                        PhysicalSortExpr {
-                            expr: left.clone(),
-                            options,
-                        },
-                        PhysicalSortExpr {
-                            expr: right.clone(),
-                            options,
-                        },
-                    )
-                })
-                .unzip();
-            let left = Arc::new(SortExec::new(LexOrdering::new(left_order).unwrap(), build));
-            let right = Arc::new(SortExec::new(LexOrdering::new(right_order).unwrap(), probe));
-            let orders = vec![options; keys.len()];
-            Arc::new(SortMergeJoinExec::try_new(
-                left,
-                right,
-                keys,
-                filter,
-                join_type,
-                orders,
-                if null_equals {
-                    NullEquality::NullEqualsNull
-                } else {
-                    NullEquality::NullEqualsNothing
-                },
-            )?)
+            sorted_join(build, probe, keys, filter, join_type, null_equality)?
         } else if nested_loop {
             Arc::new(NestedLoopJoinExec::try_new(
                 build, probe, filter, &join_type, None,
@@ -242,7 +256,7 @@ impl JoinPlan {
             } else {
                 build
             };
-            Arc::new(HashJoinExec::try_new(
+            Arc::new(spill::SpillHashJoin::new(HashJoinExec::try_new(
                 build,
                 probe,
                 keys,
@@ -250,13 +264,9 @@ impl JoinPlan {
                 &join_type,
                 None,
                 PartitionMode::Partitioned,
-                if null_equals {
-                    NullEquality::NullEqualsNull
-                } else {
-                    NullEquality::NullEqualsNothing
-                },
+                null_equality,
                 false,
-            )?)
+            )?))
         };
         let indices: Vec<usize> = if !build_left && kind < 4 {
             (right.fields().len()..right.fields().len() + left.fields().len())
@@ -638,12 +648,14 @@ mod tests {
     use super::*;
     use crate::batch::exec::ExecutionEvent;
     use datafusion::execution::config::SessionConfig;
+    use datafusion::execution::disk_manager::{DiskManagerBuilder, DiskManagerMode};
 
     #[test]
-    fn bounded_join_denial_and_cancellation_release_copied_build_state() {
+    fn bounded_join_cancellation_releases_in_memory_and_spilled_builds() {
         runtime().block_on(async {
             for build_left in [false, true] {
-                for deny in [false, true] {
+                for spill in [false, true] {
+                    let dir = tempfile::tempdir().unwrap();
                     let schema = Arc::new(Schema::new(vec![
                         Field::new("key", DataType::Int64, true),
                         Field::new("payload", DataType::Binary, true),
@@ -660,6 +672,13 @@ mod tests {
                             .with_runtime(
                                 RuntimeEnvBuilder::new()
                                     .with_memory_pool(pool.clone())
+                                    .with_disk_manager_builder(
+                                        DiskManagerBuilder::default().with_mode(
+                                            DiskManagerMode::Directories(vec![dir
+                                                .path()
+                                                .to_owned()]),
+                                        ),
+                                    )
                                     .build_arc()
                                     .unwrap(),
                             )
@@ -676,9 +695,9 @@ mod tests {
                         false,
                     )
                     .unwrap();
+                    let disk = context.runtime_env().disk_manager.clone();
                     let mut task = plan.execute(context).unwrap();
                     let port = if build_left { 0 } else { 1 };
-                    let mut failed = false;
                     loop {
                         match task.next_event().await.unwrap() {
                             Some(ExecutionEvent::InputNeeded(ports)) => {
@@ -689,7 +708,7 @@ mod tests {
                             _ => panic!("join emitted before completing its build input"),
                         }
                     }
-                    for batch_number in 0..if deny { 128 } else { 2 } {
+                    for batch_number in 0..if spill { 128 } else { 2 } {
                         let payload: ArrayRef = Arc::new(BinaryArray::from_iter_values(
                             (0..128).map(|_| vec![0_u8; 128]),
                         ));
@@ -706,23 +725,12 @@ mod tests {
                         .unwrap();
                         task.push_input(port, batch).unwrap();
                         loop {
-                            match task.next_event().await {
-                                Ok(Some(ExecutionEvent::InputNeeded(ports))) => {
+                            match task.next_event().await.unwrap() {
+                                Some(ExecutionEvent::InputNeeded(ports)) => {
                                     assert!(ports.contains(&port));
                                     break;
                                 }
-                                Ok(None) => {}
-                                Err(error) => {
-                                    assert!(
-                                        matches!(
-                                            error.find_root(),
-                                            DataFusionError::ResourcesExhausted(_)
-                                        ),
-                                        "{error}"
-                                    );
-                                    failed = true;
-                                    break;
-                                }
+                                None => {}
                                 _ => panic!("join emitted before completing its build input"),
                             }
                         }
@@ -730,17 +738,12 @@ mod tests {
                             borrowed.upgrade().is_none(),
                             "build state must own its compact buffers"
                         );
-                        if failed {
-                            break;
-                        }
                     }
-                    assert_eq!(deny, failed);
-                    if !deny {
-                        assert!(pool.reserved() > 0);
-                    }
+                    assert!(pool.reserved() > 0);
+                    assert_eq!(spill, disk.used_disk_space() > 0);
                     drop(task);
                     tokio::time::timeout(std::time::Duration::from_secs(2), async {
-                        while pool.reserved() != 0 {
+                        while pool.reserved() != 0 || disk.used_disk_space() != 0 {
                             tokio::task::yield_now().await;
                         }
                     })
