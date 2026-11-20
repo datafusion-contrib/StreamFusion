@@ -34,6 +34,7 @@ concurrency:
 
 jobs:
   parity:
+    name: Paimon 1.0.0 / Flink 1.18
     if: ${{ github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
@@ -54,8 +55,6 @@ jobs:
           workspaces: native
           key: paimon1-release
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Test upstream fork isolation
-        run: python3 -m unittest discover -s bin -p test_paimon1_ci.py
       - name: Build release native libraries once for the complete reactor
         working-directory: native
         run: cargo build --workspace --lib --release --features mimalloc --locked --timings
@@ -67,6 +66,10 @@ jobs:
           -Dnative.build.skip=true
           -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonSourceSqlTest,PaimonSplitWatermarksTest,PaimonFetcherLifecycleTest,PaimonCompaction*Test,PaimonMaintenanceTest,PaimonBatchSqlTest,PaimonBatchEncodingTest'
           -Dsurefire.failIfNoSpecifiedTests=false '-Dsf.extraJvmArgs=-Xmx2g -XX:ActiveProcessorCount=2 --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED' test
+      - name: Verify upstream fork isolation offline
+        env:
+          MAVEN_ARGS: '-o'
+        run: python3 -m unittest discover -s bin -p test_paimon1_ci.py
       - name: Plan every released TPC-DS variant with the legacy adapter
         env:
           SF_TPCDS: 'true'
@@ -83,6 +86,7 @@ jobs:
       - name: Upstream SQL tests (reuse release libraries)
         env:
           SF_PAIMON1_TEST_FORKS: '1'
+          SF_PAIMON1_QUARANTINE_REBALANCE_PREFIX: 'true'
         run: >-
           bin/paimon1-suite.sh -Pbench -Dnative.build.skip=true
           -Dstreamfusion.flink-suite.retain-failed-warehouse=true

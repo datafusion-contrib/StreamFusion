@@ -103,9 +103,11 @@ class TestRuntimePreparationTest(unittest.TestCase):
 
     def test_each_line_prepares_its_own_runtime_and_preserves_download_failure(self):
         source = RUNNER.read_text()
+        delta_start = source.index("prepare_delta_maven() {")
+        delta_end = source.index("\n}\n", delta_start) + len("\n}\n")
         start = source.index('if [[ "${SUITE_MODE}" == "prepare" ]]; then\n')
         end = source.index('\nif [[ -n "${FLINK_SUITE_SHARD:-}" ]]; then', start)
-        command = source[start:end]
+        command = source[delta_start:delta_end] + source[start:end]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             executable = root / "python3"
@@ -117,15 +119,20 @@ class TestRuntimePreparationTest(unittest.TestCase):
                 'if sys.argv[1].endswith("check-flink-suite-unshaded.py"):\n'
                 '    sys.exit(int(os.environ["ARTIFACT_STATUS"]))\n'
                 'if sys.argv[1].endswith("ci-maven-dependencies.py"):\n'
-                '    sys.exit(int(os.environ["DOWNLOAD_STATUS"]))\n'
+                '    status = "DELTA_STATUS" if "--resolve-project" in sys.argv else "DOWNLOAD_STATUS"\n'
+                '    sys.exit(int(os.environ[status]))\n'
             )
             executable.chmod(0o755)
             calls = root / "calls.jsonl"
             for line in ("2.2", "1.18"):
                 suite = root / f"suite with spaces/{line}"
                 (suite / "flink").mkdir(parents=True)
-                for status, probe_status, artifact_status in ((0, 0, 0), (7, 0, 0), (0, 9, 0), (0, 0, 13)):
-                    with self.subTest(line=line, status=status, probe_status=probe_status, artifact_status=artifact_status):
+                outcomes = [(0, 0, 0, 0), (7, 0, 0, 0), (0, 9, 0, 0), (0, 0, 13, 0)]
+                if line == "2.2":
+                    outcomes.append((0, 0, 0, 17))
+                for status, probe_status, artifact_status, delta_status in outcomes:
+                    with self.subTest(line=line, status=status, probe_status=probe_status,
+                                      artifact_status=artifact_status, delta_status=delta_status):
                         calls.unlink(missing_ok=True)
                         result = subprocess.run(
                             ["bash", "-c", 'flink_mvn() { echo "offline-probe:$*"; return "$PROBE_STATUS"; }\n' + command],
@@ -134,14 +141,17 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                  "CALLS": str(calls), "DOWNLOAD_STATUS": str(status),
                                  "PROBE_STATUS": str(probe_status), "ARTIFACT_STATUS": str(artifact_status), "MAVEN_SETTINGS": "settings",
                                  "SUITE_MODE": "prepare", "FLINK_LINE": line, "FLINK_VERSION": "test",
-                                 "PAIMON_VERSION": "2.0.0",
+                                 "PAIMON_VERSION": "2.0.0", "DELTA_STATUS": str(delta_status),
+                                 "KAFKA_CONNECTOR_VERSION": "5.0.0" if line == "2.2" else "3.2.0",
+                                 "DELTA_TEST_POM": "delta fixture/pom.xml", "DELTA_VERSION": "test-delta",
                                  "FLINK_TARGET_PROFILE": "java11-target" if line == "2.2" else "",
                                  "REPO_ROOT": str(RUNNER.parents[1]), "SUITE_ROOT": str(suite),
                                  "SUITE_MAVEN_REPO": str(suite / "m2"),
                                  "SUITE_MAVEN_USER_HOME": str(suite / "maven-wrapper"),
                                  "FLINK_ROOT": str(suite / "flink"), "CONTRACT_FILE": "contracts"},
                         )
-                        self.assertEqual(artifact_status or status or probe_status, result.returncode, result.stderr)
+                        self.assertEqual(artifact_status or status or delta_status or probe_status,
+                                         result.returncode, result.stderr)
                         invocations = [json.loads(row) for row in calls.read_text().splitlines()]
                         guard = invocations.pop(0)[2]
                         self.assertTrue(guard[0].endswith("check-flink-suite-unshaded.py"))
@@ -164,22 +174,69 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                     "org.junit.platform:junit-platform-launcher:" +
                                     ("1.9.1" if line == "1.18" else "1.11.4"),
                                     "org.apache.httpcomponents:httpclient:4.4.1",
-                                    "org.apache.paimon:paimon-vfs-hadoop:2.0.0"]
+                                    "org.apache.paimon:paimon-vfs-hadoop:2.0.0",
+                                    "org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0"]
                         if line == "2.2":
                             expected.extend(["org.apache.maven.surefire:surefire-junit-platform:3.2.5",
                                              "org.junit.platform:junit-platform-launcher:1.13.3",
                                              "org.apache.maven.plugins:maven-surefire-plugin:3.5.3",
-                                             "org.apache.maven.surefire:surefire-junit-platform:3.5.3",
                                              "org.apache.maven.plugins:maven-resources-plugin:3.5.0"])
+                        else:
+                            expected.append("org.apache.flink:flink-connector-parent:1.0.0:pom")
                         self.assertEqual(expected, artifacts)
-                        self.assertEqual(1 if status or probe_status else 2, len(invocations))
-                        self.assertEqual(not (status or probe_status), "build is ready" in result.stdout)
-                        if status:
+                        expected_calls = 1
+                        if line == "2.2" and not status:
+                            self.assertEqual(
+                                ["--resolve-project", "--pom", "delta fixture/pom.xml",
+                                 "--repository", str(suite / "m2"),
+                                 "--define", "flink.version=test", "--define", "delta.version=test-delta"],
+                                invocations[1][2][1:],
+                            )
+                            expected_calls += 1
+                            if not delta_status:
+                                self.assertEqual(
+                                    ["--repository", str(suite / "m2"),
+                                     "--artifact", "org.apache.maven.surefire:surefire-junit-platform:3.5.3",
+                                     "--artifact", "org.junit.platform:junit-platform-launcher:1.11.4"],
+                                    invocations[2][2][1:],
+                                )
+                                expected_calls += 1
+                        if not (status or delta_status or probe_status):
+                            expected_calls += 1
+                        self.assertEqual(expected_calls, len(invocations))
+                        self.assertEqual(not (status or delta_status or probe_status), "build is ready" in result.stdout)
+                        if status or delta_status:
                             self.assertNotIn("offline-probe:", result.stdout)
                         else:
                             self.assertIn(" -o ", result.stdout)
                             self.assertIn("CalcITCase#testSimpleProject", result.stdout)
                             self.assertIn("-Dmaven.test.failure.ignore=false", result.stdout)
+
+
+    def test_delta_consumer_tests_offline_after_the_required_preparation(self):
+        source = RUNNER.read_text()
+        start = source.index('  if [[ "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" != "true" ]]; then\n'
+                             '    prepare_delta_maven || exit $?')
+        end = source.index('\nelif [[ "${SUITE_MODE}" == "paimon" ]]; then', start)
+        command = (
+            'prepare_delta_maven() { echo prepare; return "$PREPARATION_STATUS"; }\n'
+            'mvn() { printf "<%s>\n" "$@"; }\n'
+            'MAVEN_SETTINGS="suite settings.xml"\n'
+            'MAVEN_TEST_ARGS=(-f "delta fixture/pom.xml" test)\n' + source[start:end]
+        )
+        expected_test = ["<-o>", "<-gs>", "<suite settings.xml>", "<-f>", "<delta fixture/pom.xml>", "<test>"]
+        for reuse, status, expected in (
+                ("true", 17, expected_test),
+                ("false", 0, ["prepare", *expected_test]),
+                ("false", 17, ["prepare"])):
+            with self.subTest(reuse=reuse, status=status):
+                result = subprocess.run(
+                    ["bash", "-c", command], capture_output=True, text=True,
+                    env={**os.environ, "FLINK_SUITE_REUSE_COMMON_BUILD": reuse,
+                         "PREPARATION_STATUS": str(status)},
+                )
+                self.assertEqual(0 if reuse == "true" else status, result.returncode, result.stderr)
+                self.assertEqual(expected, result.stdout.splitlines())
 
 
 if __name__ == "__main__":

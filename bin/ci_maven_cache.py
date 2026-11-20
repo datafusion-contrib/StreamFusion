@@ -188,12 +188,21 @@ def restore(repository, archive, key, jdk):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("prepare", "verify", "pack", "restore"))
+    parser.add_argument("command", choices=("prepare", "verify", "pack", "restore", "complete-graph"))
     parser.add_argument("--repository", type=Path, default=Path.home() / ".m2/repository")
-    parser.add_argument("--key", required=True)
-    parser.add_argument("--jdk", choices=("11", "17"), required=True)
+    parser.add_argument("--key")
+    parser.add_argument("--jdk", choices=("11", "17"))
     parser.add_argument("--archive", type=Path)
-    args = parser.parse_args()
+    args, recipe = parser.parse_known_args()
+    if args.command == "complete-graph":
+        if recipe[:1] != ["--"]:
+            parser.error("complete-graph requires Maven recipe options after --")
+        complete_graph(args.repository.resolve(), recipe[1:])
+        return
+    if recipe:
+        parser.error("unrecognized arguments: " + " ".join(recipe))
+    if args.key is None or args.jdk is None:
+        parser.error(f"{args.command} requires --key and --jdk")
     if args.command in ('pack', 'restore'):
         if not args.archive:
             parser.error('pack and restore require --archive')

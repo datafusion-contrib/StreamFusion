@@ -21,6 +21,8 @@ class SuiteMatrixTest(unittest.TestCase):
         expected["2.2", "iceberg", ""] += 1
         self.assertEqual(expected, self.cases())
         self.assertEqual(22, len(matrix()["include"]))
+        titles = [(entry["line"], entry["title"]) for entry in matrix()["include"]]
+        self.assertEqual(len(titles), len(set(titles)))
         for entry in matrix()["include"]:
             self.assertEqual(1, len(entry["suites"].split()),
                              "Each connector/format has an independent scheduling entry")

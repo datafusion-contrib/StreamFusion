@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / '.github/workflows/ci.yml'
+WORKFLOW = ROOT / '.github/workflows/ci-test-suites.yml'
 NS = {'m': 'http://maven.apache.org/POM/4.0.0'}
 
 

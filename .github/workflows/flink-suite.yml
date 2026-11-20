@@ -30,25 +30,29 @@ concurrency:
 
 jobs:
   plan:
+    name: Coverage plan
     if: ${{ (github.event_name != 'schedule' || github.repository == 'datafusion-contrib/StreamFusion') && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
     uses: ./.github/workflows/ci-plan.yml
 
-  upstream-line:
+  upstream-flink-22:
+    name: Flink 2.2
     needs: plan
     if: needs.plan.outputs.tests == 'true'
-    name: Flink ${{ matrix.line }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - line: '2.2'
-            version: '2.2.1'
-          - line: '1.18'
-            version: '1.18.1'
     uses: ./.github/workflows/flink-suite-line.yml
     with:
-      line: ${{ matrix.line }}
-      version: ${{ matrix.version }}
+      line: '2.2'
+      version: '2.2.1'
+      sql_inventory: ${{ inputs.sql_inventory || false }}
+      inventory_scope: ${{ inputs.inventory_scope || 'all' }}
+
+  upstream-flink-118:
+    name: Flink 1.18
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
+    uses: ./.github/workflows/flink-suite-line.yml
+    with:
+      line: '1.18'
+      version: '1.18.1'
       sql_inventory: ${{ inputs.sql_inventory || false }}
       inventory_scope: ${{ inputs.inventory_scope || 'all' }}
 
@@ -65,6 +69,7 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+          cache-dependency-path: dev/flink-suite/delta-legacy/pom.xml
       - name: Run unchanged legacy Delta SQL tests against released Flink 1.18
         run: |
           set -o pipefail
@@ -82,7 +87,7 @@ jobs:
   all-tests:
     name: All upstream integration tests
     if: ${{ (always() && !cancelled()) && (github.event_name != 'schedule' || github.repository == 'datafusion-contrib/StreamFusion') && (github.repository != 'datafusion-contrib/StreamFusion' || github.ref == 'refs/heads/main') }}
-    needs: [plan, upstream-line, legacy-delta-audit]
+    needs: [plan, upstream-flink-22, upstream-flink-118, legacy-delta-audit]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

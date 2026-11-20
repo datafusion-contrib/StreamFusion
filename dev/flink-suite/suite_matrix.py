@@ -10,6 +10,8 @@ def matrix(inventory=False, scope="all", line=None):
     if line not in (None, "2.2", "1.18"):
         raise ValueError(f"Unknown Flink line: {line}")
     selected_line = line
+    titles = {"formats": "Formats", "parquet": "Parquet", "orc": "ORC", "kafka": "Kafka",
+              "paimon": "Paimon", "delta": "Delta", "iceberg": "Iceberg", "state": "State"}
     entries = []
     for line, version in (("2.2", "2.2.1"), ("1.18", "1.18.1")):
         if selected_line is not None and line != selected_line:
@@ -25,7 +27,8 @@ def matrix(inventory=False, scope="all", line=None):
         if not inventory or scope == "all":
             groups.append(("state", "state", ""))
         for label, suites, shard in groups:
-            entries.append(dict(line=line, version=version, label=label, suites=suites, shard=shard))
+            title = f"Runtime (shard {shard})" if shard else titles[label]
+            entries.append(dict(line=line, version=version, label=label, title=title, suites=suites, shard=shard))
     return {"include": entries}
 
 

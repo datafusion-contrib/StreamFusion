@@ -32,11 +32,13 @@ def summarize(run, jobs):
         started = job.get("started_at") if executed and job["status"] in ("in_progress", "completed") else None
         elapsed = seconds(started, job["completed_at"]) if started and job.get("completed_at") else None
         name = job["name"]
-        group = ("canonical" if name.startswith("Canonical savepoint jobs")
-                 else "canonical preparation" if name.startswith("Prepare canonical Java")
-                 else "java" if name.startswith("Runtime, connectors and formats")
-                 else "upstream preparation" if "Prepare upstream build" in name
-                 else "upstream tests" if " suite (Flink " in name else "other")
+        title = name.removeprefix("Test suites / ")
+        group = ("canonical" if title.startswith("Canonical savepoint")
+                 else "canonical preparation" if title.startswith("Prepare canonical Java")
+                 else "java" if title.startswith("Runtime, connectors and formats")
+                 else "upstream preparation" if "Prepare upstream build" in title
+                 else "upstream tests" if " suite (Flink " in title or title.startswith(("Flink 1.18 / ", "Flink 2.2 / "))
+                 else "other")
         groups[group]["jobs"] += 1
         if elapsed is not None:
             groups[group]["runner_seconds"] += elapsed
