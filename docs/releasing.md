@@ -99,10 +99,11 @@ gh workflow run release.yml --repo datafusion-contrib/StreamFusion --ref main -f
 Complete the normal release gates before dispatching. The workflow validates the requested tag
 against Maven and Cargo, signs it with `MAVEN_GPG_PRIVATE_KEY`, verifies the signature, and pushes
 it before building and publishing in the same run. GitHub's workflow token does not trigger another
-push workflow, so this manual run supplies the complete release pipeline. A retry accepts an
-existing signed tag only when it points to the same commit; it never moves a release tag. Supply
-`dry-run-v<version>` for Central validation and a draft GitHub release instead. Manual dispatches
-from other branches fail before tag creation.
+push workflow, so this manual run supplies the complete release pipeline. Add `-F resume=true`
+to resume publishing an existing signed tag after a runner or workflow failure. The workflow
+verifies that the tag points to a commit in main's history, checks the signature and version, and
+builds every artifact from that exact commit. Supply `dry-run-v<version>` for Central validation
+and a draft GitHub release instead. Manual dispatches run from `main`.
 
 
 All native packages inherit the single version in `native/Cargo.toml`'s `[workspace.package]`.
@@ -113,8 +114,8 @@ and Maven artifact names remain the same, including the single Avro native paylo
 Avro-Confluent-Registry. Extension libraries are checked for foreign JNI entry points before shipping.
 
 Following DataFusion Comet's runner-native pattern, it builds the Linux x86_64 payload on an Ubuntu
-22.04 runner and the Apple Silicon payload on a macOS runner. The Linux image checks use that same
-glibc 2.35 build baseline with a separate Rust cache key, preventing reuse of Ubuntu 24.04
+22.04 runner and the Apple Silicon payload on the `macos-15` runner. The Linux image checks use
+that same glibc 2.35 build baseline with a separate Rust cache key, preventing reuse of Ubuntu 24.04
 objects. Linux artifact validation rejects packaged libraries requiring a newer glibc before
 image execution. This baseline loads in the official Flink 1.18 and 2.2 images. The containerized
 cross-platform builder uses Rust 1.94 on Debian Bullseye to stay below that ABI floor. A `--host-only`
@@ -125,9 +126,10 @@ JARs, validates the artifact boundaries, signs and publishes the reactor through
 and only then creates the GitHub release. A version containing a hyphen, such as `0.1.0-rc5`, becomes
 a GitHub prerelease.
 
-If a release fails before Central reports it as published, fix the cause, delete the unpublished tag,
-and prepare a new candidate version. Once Central has published a coordinate, never reuse it; advance
-to the next candidate or patch version.
+If a release fails before Central reports it as published, resume from the signed tag when the fix
+affects only the release workflow or runner setup. When the source needs a correction, prepare a new
+candidate version. Once Central has published a coordinate, use a new candidate or patch version
+for changes to the published artifacts.
 
 ## Flink 1.18 development artifacts
 
