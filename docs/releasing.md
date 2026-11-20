@@ -60,6 +60,11 @@ The workflow's universal bundle verification also enables the `release` profile 
 `-Dgpg.skip=true`. This generates the flattened publication POMs and source/javadoc attachments
 before artifact validation; signing occurs in the subsequent deploy step.
 
+The publishing job pins Maven 3.9.16 because older signed tags use Central publishing plugin
+0.11.0. With Maven 3.10, that plugin puts repository metadata in the upload, and Central
+rejects the bundle. Sonatype fixed the issue in
+[Central publishing plugin 0.12.0](https://central.sonatype.org/publish/publish-portal-maven/#0120-13-oct-2026).
+
 `bin/package-release.sh [output-directory]` writes the deployment archive and its SHA-256 checksum
 to the supplied directory, creating it when necessary. Relative paths are resolved from the caller's
 working directory; the default is `target/release` in the repository.
