@@ -41,3 +41,19 @@ membership reduction principle as Comet's right-key reduction before a semi-join
 sort, using the existing DataFusion aggregate executor for composite keys. The
 [Iceberg TPC-DS follow-up](../connectors/iceberg.md#tpc-ds-regression-follow-up)
 records the worker profiles and matched release timings for Q14a and Q14b.
+
+## Bounded hash join spill
+
+Small builds retain the existing DataFusion hash join. The build buffer reserves
+space against Flink's task off-heap authority for retained batches, consolidation,
+and the hash table. When the reservation is denied, DataFusion's batch partitioner
+hashes both inputs into 32 local partitions using their existing key expressions.
+Each pair is replayed through the same DataFusion hash join in order. When skew
+keeps a single partition above the available budget, the partition can replay
+through the existing external sort and sort-merge join before any of its rows
+are emitted. The spill files and temporary memory retire when the task finishes
+or is cancelled.
+
+The [nested Iceberg comparison](../connectors/iceberg.md#nested-batch-hash-join-with-native-iceberg-io)
+verified complete native scan-to-commit execution with one million rows on each
+side and 3.11 GB of partition spills under a 256 MiB task off-heap budget.

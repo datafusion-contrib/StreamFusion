@@ -12,12 +12,11 @@ scheduling and batch recovery. This does not accelerate arbitrary DataStream cod
 
 Every interior operator must be an admitted Calc/filter, `UNION ALL`, sort, aggregate,
 Expand, bounded limit, analytic window/rank, verified bounded join or blocking
-singleton/hash/broadcast exchange. All fields
-must use scalar types supported by the existing Arrow boundary, and every expression
-must pass the [Calc encoder and declared-result-type checks](calc-filter.md).
-ARRAY, MAP, MULTISET, ROW, structured/RAW and unverified collection representations
-retain whole-query fallback. Stock sources, constant relations and row sinks may
-remain at the perimeter.
+singleton/hash/broadcast exchange. Fields must use types carried by the existing
+Arrow boundary, including nested ARRAY, MAP, and ROW payloads. Operator and
+[Calc encoder and declared-result-type checks](calc-filter.md) still apply.
+Structured/RAW and unverified collection expressions retain whole-query fallback.
+Stock sources, constant relations and row sinks may remain at the perimeter.
 
 A row source with character fields requires a producer that guarantees valid UTF-8. Sources without
 that guarantee retain stock batch computation. Connectors with native Arrow output declare their
@@ -180,12 +179,11 @@ route, including when stock source traits elided an exchange. This avoids assumi
 that streaming BinaryRow hashing equals stock batch's generated field hash.
 Range exchanges and other unsupported interior nodes retain stock. Native
 batch exchanges explicitly request BATCH; hybrid scheduling remains unverified.
-Connector acceleration is separate. The optional native filesystem Parquet source
-now replaces admitted fixed-parallelism scan/transpose boundaries with Arrow input;
-its [source whitelist](../connectors/parquet.md#source) covers the initial types,
-projections and options. Other bounded reader contracts and all batch sink providers
-retain Flink's code, including final commits, overwrite policies and constraints.
-An available codec alone does not admit another connector or source configuration.
+Connector admission is independent of the operators in the query. The
+[filesystem Parquet source](../connectors/parquet.md#source) and
+[Iceberg source and sink](../connectors/iceberg.md#bounded-batch-source-and-sink)
+can exchange Arrow directly with admitted batch plans. Iceberg Java still handles
+planning, routing, end-of-input commits, and overwrite semantics.
 
 ## Bounded join candidate
 
@@ -211,13 +209,16 @@ graph processors and normal Flink scheduling/recovery remain active. Installing 
 the optimizer hook into an already constructed stock planner declines joins because
 it cannot install this graph adaptation.
 
-Hash build state uses the existing shared native memory pool and fails on reservation
-denial; this initial DataFusion hash table does **not** spill. DataFusion nested-loop
-execution has a chunked disk-spill fallback when temporary files are available. Sort-merge input sorting
-uses the existing DataFusion external sorter. A composite NULL-safe hash semi-join
-with no residual predicate groups the non-preserved build keys before building its
-hash table. No separate pool
-or higher memory limit is introduced. The complete SF1 TPC-H release comparison
+Hash builds use the shared task off-heap pool. When the build cannot be retained,
+both inputs are hash-partitioned into temporary Arrow IPC files in Flink's spill
+directories. DataFusion joins each pair of partitions in turn. A partition
+whose hash table still exceeds the budget can use DataFusion's spilling sort-merge
+join before it emits any rows. The `batchJoinSpills` and `batchJoinSpilledBytes`
+counters measure hash partition files. Memory denials during hash partitioning
+and bounded Arrow input and output copies identify the failing stage. DataFusion
+nested-loop joins use their existing chunked disk-spill path. A composite NULL-safe hash semi-join with no
+residual predicate groups the non-preserved build keys before building its hash
+table. The complete SF1 TPC-H release comparison
 now passes all 22 queries with exact rows/types, native source and compute work,
 and zero entry-transpose rows. All 22 query medians favor native; the geometric
 mean speedup is 2.8137×. This is a local shared-host, warm-cache cohort, not an
@@ -235,8 +236,9 @@ arbitrary batch SQL or larger-data performance guarantee. See the
 - ORDER BY with other key types, sorted OFFSET without finite FETCH, range sorting,
   analytic functions/frames outside the whitelist above, and other batch sort operators.
 - Join predicates requiring unverified JVM/string/collection representations, mixed
-  keyed NULL equality, preserved-side broadcasts and external hash-table spilling.
-- Expand projections beyond references/literals, UNNEST/correlate, nested boundary types and set-operation plans outside UNION ALL.
+  keyed NULL equality, nested join keys, and preserved-side broadcasts.
+- Nested payloads across Expand or analytic windows/rank, Expand projections beyond
+  references/literals, UNNEST/correlate, and set-operation plans outside UNION ALL.
 - Native bounded connector admission beyond the documented filesystem Parquet, Paimon
   and Iceberg whitelists.
 - Native compiled batch plans. The deployed batch planner preserves stock compilation;

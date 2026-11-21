@@ -115,6 +115,10 @@ class NativeIcebergNestedSqlTest {
   }
 
   static void append(Table table, int start, int end) throws Exception {
+    append(table, start, end, "");
+  }
+
+  static void append(Table table, int start, int end, String padding) throws Exception {
     var factory =
         new GenericFileWriterFactory.Builder(table).dataFileFormat(FileFormat.PARQUET).build();
     var writer =
@@ -127,37 +131,38 @@ class NativeIcebergNestedSqlTest {
             null);
     try (writer) {
       for (int id = start; id < end; id++) {
-        var row = GenericRecord.create(table.schema());
-        row.setField("id", id);
-        var profile = GenericRecord.create(table.schema().findType("profile").asStructType());
-        profile.setField("n", id * 10);
-        profile.setField("label", id % 2 == 0 ? "é🐍-" + id : null);
-        profile.setField(
-            "ts", LocalDateTime.parse("1969-12-31T23:59:59.999999").plusNanos(id * 1000L));
-        row.setField("profile", id % 3 == 1 ? null : profile);
-        var item =
-            GenericRecord.create(
-                table.schema().findType("items").asListType().elementType().asStructType());
-        item.setField("name", "item-" + id);
-        item.setField("vals", java.util.Arrays.asList(0.5, null, Double.NaN));
-        var items = new ArrayList<>();
-        if (id % 3 != 0) {
-          items.add(item);
-          items.add(null);
-        }
-        row.setField("items", id % 3 == 2 ? null : items);
-        var value =
-            GenericRecord.create(
-                table.schema().findType("attrs").asMapType().valueType().asStructType());
-        value.setField("n", id);
-        var attrs = new LinkedHashMap<>();
-        attrs.put("a", value);
-        attrs.put("b", null);
-        row.setField("attrs", id % 2 == 0 ? attrs : Map.of());
-        writer.write(row);
+        writer.write(nestedRow(table.schema(), id, padding));
       }
     }
     table.newAppend().appendFile(writer.toDataFile()).commit();
+  }
+
+  static GenericRecord nestedRow(org.apache.iceberg.Schema schema, int id, String padding) {
+    var row = GenericRecord.create(schema);
+    row.setField("id", id);
+    var profile = GenericRecord.create(schema.findType("profile").asStructType());
+    profile.setField("n", id * 10);
+    profile.setField("label", id % 2 == 0 ? "é🐍-" + id + padding : null);
+    profile.setField("ts", LocalDateTime.parse("1969-12-31T23:59:59.999999").plusNanos(id * 1000L));
+    row.setField("profile", id % 3 == 1 ? null : profile);
+    var item =
+        GenericRecord.create(schema.findType("items").asListType().elementType().asStructType());
+    item.setField("name", "item-" + id + padding);
+    item.setField("vals", java.util.Arrays.asList(0.5, null, Double.NaN));
+    var items = new ArrayList<>();
+    if (id % 3 != 0) {
+      items.add(item);
+      items.add(null);
+    }
+    row.setField("items", id % 3 == 2 ? null : items);
+    var value =
+        GenericRecord.create(schema.findType("attrs").asMapType().valueType().asStructType());
+    value.setField("n", id);
+    var attrs = new LinkedHashMap<>();
+    attrs.put("a", value);
+    attrs.put("b", null);
+    row.setField("attrs", id % 2 == 0 ? attrs : Map.of());
+    return row;
   }
 
   static void addNestedEqualities(Table table) throws Exception {

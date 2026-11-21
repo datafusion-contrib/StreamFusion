@@ -65,6 +65,7 @@ public final class NativeIcebergSink {
         configuration,
         options,
         uidPrefix,
+        bounded,
         dataWriterDecorator(schema, settings, metrics));
   }
 

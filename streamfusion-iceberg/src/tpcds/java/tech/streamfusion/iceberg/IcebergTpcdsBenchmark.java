@@ -255,6 +255,11 @@ class IcebergTpcdsBenchmark {
                 observation.put("nativeTasks", nativeTasks);
                 observation.put("nativeFiles", output.nativeFiles());
                 observation.put("files", output.files());
+                observation.put(
+                    "joinSpills", metrics.counterValue(measurement.jobId(), "batchJoinSpills"));
+                observation.put(
+                    "joinSpilledBytes",
+                    metrics.counterValue(measurement.jobId(), "batchJoinSpilledBytes"));
                 observation.put("work", work);
                 observation.put(
                     "entryTransposeRows",

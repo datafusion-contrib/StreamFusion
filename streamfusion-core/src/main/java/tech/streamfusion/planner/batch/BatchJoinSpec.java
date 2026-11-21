@@ -111,20 +111,20 @@ final class BatchJoinSpec {
         var output = ArrowSchema.allocateNew(allocator)) {
       Data.exportSchema(
           allocator,
-          ArrowConversion.toArrowInputSchema(
-              FlinkTypeFactory$.MODULE$.toLogicalRowType(join.getLeft().getRowType()), false),
+          ArrowConversion.toBoundedInputSchema(
+              FlinkTypeFactory$.MODULE$.toLogicalRowType(join.getLeft().getRowType())),
           null,
           left);
       Data.exportSchema(
           allocator,
-          ArrowConversion.toArrowInputSchema(
-              FlinkTypeFactory$.MODULE$.toLogicalRowType(join.getRight().getRowType()), false),
+          ArrowConversion.toBoundedInputSchema(
+              FlinkTypeFactory$.MODULE$.toLogicalRowType(join.getRight().getRowType())),
           null,
           right);
       Data.exportSchema(
           allocator,
-          ArrowConversion.toArrowInputSchema(
-              FlinkTypeFactory$.MODULE$.toLogicalRowType(join.getRowType()), false),
+          ArrowConversion.toBoundedInputSchema(
+              FlinkTypeFactory$.MODULE$.toLogicalRowType(join.getRowType())),
           null,
           output);
       long filter =
