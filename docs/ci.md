@@ -5,6 +5,11 @@ shards still discover compiled classes in `streamfusion-runtime/target/test-clas
 ownership does not change the selected test identities or native/recovery assertions. See
 [test ownership and repository contents](development.md) for version adapters and benchmark rules.
 
+Python tool implementations and unit tests live in `dev/tools/`. The ordinary tooling step uses
+`python3 -m dev.tools.tests` with explicit exclusions for checks owned by other stages, so new
+validation tests cannot be omitted by a stale per-file list. The runner rejects empty selections
+and test modules. See [developer tools](developer-tools.md) for entry points and side effects.
+
 Contributor builds and tests run in **personal forks**, using each fork owner's GitHub Actions
 quota instead of the shared `datafusion-contrib` quota. Opening or updating a PR does not launch
 the test matrix in the canonical repository. Source-changing canonical `main` pushes still run
@@ -527,7 +532,7 @@ The full Java suite includes every connector and format tag on both Flink lines 
 JDKs. Its default Surefire execution runs untagged tests and every tag except ORC; a second
 execution runs ORC with its isolated protobuf classpath. These same tests do not need six
 additional tagged-module jobs. Standalone native package checks remain in the Rust job.
-`bin/test_ci_module_groups.py` exercises the actual runtime Surefire configuration with one
+`dev/tools/tests/test_ci_module_groups.py` exercises the actual runtime Surefire configuration with one
 fixture for every declared module tag and one untagged fixture, requiring each to run once.
 
 ## Java test memory budget
@@ -941,6 +946,15 @@ failed before compilation because one runner reported published Flink 2.2.1 and 
 as missing. Other jobs resolved those releases successfully. Separating downloads from tests
 allows transient resolution failures to recover without rerunning test code; forcing missing-release
 checks prevents Maven's failed-lookup cache from defeating the next setup attempt.
+
+Kafka consumers also collect the released connector's mediated dependency graph before
+`test-compile`, using the same wrapper, host Flink version and isolated Maven repository as
+compilation. This puts parent, imported BOM and transitive descriptor downloads through the
+bounded dependency setup retries, including a missing-release cache refresh after failure.
+The shared Flink preparation does not cover each connector's full graph: #680's two Kafka
+jobs stopped on published Jackson, Testcontainers and CEL BOMs before any SQL ran. The graph
+goal invokes no compile or test lifecycle. Persistent resolution failure remains blocking;
+compilation and tests still execute once, with their original failure and native-route checks.
 
 The upstream suite transfers its prepared pinned Maven distribution to its consumer runners
 and verifies that it starts with downloads blocked. See the
