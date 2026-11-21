@@ -106,7 +106,9 @@ impl Sorter {
             .build_arc()?;
         let config = SessionConfig::new()
             .with_batch_size(4096)
-            .with_sort_spill_reservation_bytes(memory / 8)
+            // Leave room for the merge's buffered runs to materialize sorted variable-width
+            // batches while the input reservations are still held.
+            .with_sort_spill_reservation_bytes(memory / 4)
             .with_sort_in_place_threshold_bytes(memory / 8);
         let context = Arc::new(TaskContext::new(
             None,
@@ -144,13 +146,19 @@ impl Sorter {
         })
     }
 
-    pub(crate) async fn push(&self, batch: RecordBatch) -> Result<()> {
-        self.input
+    pub(crate) async fn push(&mut self, batch: RecordBatch) -> Result<()> {
+        let input = self
+            .input
             .as_ref()
-            .ok_or_else(|| DataFusionError::Execution("Sort input closed".into()))?
-            .send(Ok(batch))
-            .await
-            .map_err(|_| DataFusionError::Execution("Rewrite sort failed".into()))
+            .ok_or_else(|| DataFusionError::Execution("Sort input closed".into()))?;
+        if input.send(Ok(batch)).await.is_err() {
+            // A failed sorter closes its input and reports the cause on its output stream.
+            self.next().await?;
+            return Err(DataFusionError::Execution(
+                "Rewrite sort input closed".into(),
+            ));
+        }
+        Ok(())
     }
 
     pub(crate) fn finish(&mut self) {

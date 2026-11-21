@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.actions.BinPackRewriteFilePlanner;
 import org.apache.iceberg.actions.RewriteDataFilesCommitManager;
@@ -36,9 +37,12 @@ class NativeIcebergRewriteTest {
     assertEquals(0L, tech.streamfusion.operator.TaskOffHeapMemory.reservedBytes());
   }
 
-  @org.junit.jupiter.api.Test
-  void flinkJobUsesTheExistingPlannerAndCommitter() throws Exception {
+  @ParameterizedTest
+  @CsvSource({"STREAMING,false", "BATCH,false", "BATCH,true"})
+  void flinkJobUsesTheExistingPlannerAndCommitter(RuntimeExecutionMode mode, boolean sort)
+      throws Exception {
     var table = NativeIcebergReaderTest.fixture(temp, true);
+    if (sort) table.replaceSortOrder().desc("id").commit();
     var expected = read(table);
     var configuration =
         org.apache.flink.configuration.Configuration.fromMap(
@@ -47,13 +51,19 @@ class NativeIcebergRewriteTest {
     var env =
         org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
             .getExecutionEnvironment(configuration);
+    env.setRuntimeMode(mode);
     env.setParallelism(1);
     var groups =
-        NativeIcebergMaintenance.rewriteDataFiles(env, table, Map.of("rewrite-all", "true"), false);
+        NativeIcebergMaintenance.rewriteDataFiles(env, table, Map.of("rewrite-all", "true"), sort);
     assertEquals(1, groups.size());
     assertFalse(groups.get(0).addedFiles().isEmpty());
     table.refresh();
     assertEquals(expected, read(table));
+    assertEquals("replace", table.currentSnapshot().operation());
+    for (var file : groups.get(0).addedFiles()) {
+      assertNativeFile(table, file);
+      if (sort) assertDescendingIds(table, file);
+    }
   }
 
   @org.junit.jupiter.api.Test
@@ -143,24 +153,7 @@ class NativeIcebergRewriteTest {
     assertEquals(1, groups.size());
     assertFalse(groups.iterator().next().addedFiles().isEmpty());
     for (var file : groups.iterator().next().addedFiles()) {
-      if (sort) {
-        assertEquals(table.sortOrder().orderId(), file.sortOrderId());
-        int previous = Integer.MAX_VALUE;
-        try (var input =
-            org.apache.iceberg.parquet.Parquet.read(table.io().newInputFile(file.location()))
-                .project(table.schema())
-                .createReaderFunc(
-                    physical ->
-                        org.apache.iceberg.data.parquet.GenericParquetReaders.buildReader(
-                            table.schema(), physical))
-                .build()) {
-          for (var value : input) {
-            int id = (Integer) ((org.apache.iceberg.data.Record) value).getField("id");
-            assertTrue(id <= previous);
-            previous = id;
-          }
-        }
-      }
+      if (sort) assertDescendingIds(table, file);
       assertNativeFile(table, file);
     }
     new RewriteDataFilesCommitManager(table, snapshot).commitOrClean(groups);
@@ -481,6 +474,26 @@ class NativeIcebergRewriteTest {
                 new org.apache.hadoop.fs.Path(file.location()),
                 new org.apache.hadoop.conf.Configuration()))) {
       assertTrue(footer.getFooter().getFileMetaData().getCreatedBy().contains("parquet-rs"));
+    }
+  }
+
+  private static void assertDescendingIds(org.apache.iceberg.Table table, org.apache.iceberg.DataFile file)
+      throws Exception {
+    assertEquals(table.sortOrder().orderId(), file.sortOrderId());
+    int previous = Integer.MAX_VALUE;
+    try (var input =
+        org.apache.iceberg.parquet.Parquet.read(table.io().newInputFile(file.location()))
+            .project(table.schema())
+            .createReaderFunc(
+                physical ->
+                    org.apache.iceberg.data.parquet.GenericParquetReaders.buildReader(
+                        table.schema(), physical))
+            .build()) {
+      for (var value : input) {
+        int id = (Integer) ((org.apache.iceberg.data.Record) value).getField("id");
+        assertTrue(id <= previous);
+        previous = id;
+      }
     }
   }
 
