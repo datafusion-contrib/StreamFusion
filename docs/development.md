@@ -4,6 +4,10 @@ Production Java belongs to its deployable core, connector or format module. Test
 the module whose contract they exercise. The parent POM aggregates the modules and has no
 root `src/test` tree. Test fixtures do not ship in deployable core or connector payloads.
 
+Developer commands keep their stable `bin/` names; Python implementations and tool tests live
+under `dev/tools/`. See the [tool catalog](developer-tools.md) for ownership, discovery and
+commands that download inputs, mutate a checkout or publish evidence.
+
 ## Test owners and dependencies
 
 Runtime implementation ownership follows Flink's functional families, with mode-specific helpers

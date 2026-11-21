@@ -60,6 +60,17 @@ The workflow's universal bundle verification also enables the `release` profile 
 `-Dgpg.skip=true`. This generates the flattened publication POMs and source/javadoc attachments
 before artifact validation; signing occurs in the subsequent deploy step.
 
+The publishing job pins Maven 3.9.16 because older signed tags use Central publishing plugin
+0.11.0. With Maven 3.10, that plugin puts repository metadata in the upload, and Central
+rejects the bundle. Sonatype fixed the issue in
+[Central publishing plugin 0.12.0](https://central.sonatype.org/publish/publish-portal-maven/#0120-13-oct-2026).
+
+Maven Central requires sources and Javadoc attachments for every JAR module. The publishing job
+checks those attachments before upload, including for the resource-only integration-test
+assembly. That assembly's attachments contain a README that links to the tagged tests and
+developer documentation. The workflow attaches these files during publication without changing
+the signed source commit or any executable payload.
+
 `bin/package-release.sh [output-directory]` writes the deployment archive and its SHA-256 checksum
 to the supplied directory, creating it when necessary. Relative paths are resolved from the caller's
 working directory; the default is `target/release` in the repository.
@@ -104,6 +115,11 @@ to resume publishing an existing signed tag after a runner or workflow failure. 
 verifies that the tag points to a commit in main's history, checks the signature and version, and
 builds every artifact from that exact commit. Supply `dry-run-v<version>` for Central validation
 and a draft GitHub release instead. Manual dispatches run from `main`.
+
+If both native jobs succeeded on a previous release run, add `-f native_run=<run-id>` when
+resuming. The workflow checks the previous run's repository, job results, checkout commit, and
+artifact IDs. It verifies the SHA-256 of each download and runs the universal bundle checks
+before publication. Use a run whose native artifacts are still available.
 
 
 All native packages inherit the single version in `native/Cargo.toml`'s `[workspace.package]`.

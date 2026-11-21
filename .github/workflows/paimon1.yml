@@ -23,8 +23,11 @@ on:
       - 'bin/ci-free-disk.py'
       - 'bin/paimon1-suite.sh'
       - 'bin/paimon-compaction-suite.py'
+      - 'dev/tools/suites/paimon_compaction.py'
+      - 'dev/tools/ci/free_disk.py'
+      - 'dev/tools/checks/native_workspace.py'
       - 'dev/flink-suite/paimon-compaction*'
-      - 'bin/test_paimon1_ci.py'
+      - 'dev/tools/tests/test_paimon1_ci.py'
       - 'pom.xml'
       - '.github/workflows/paimon1.yml'
 
@@ -69,7 +72,7 @@ jobs:
       - name: Verify upstream fork isolation offline
         env:
           MAVEN_ARGS: '-o'
-        run: python3 -m unittest discover -s bin -p test_paimon1_ci.py
+        run: python3 -m unittest discover -s dev/tools/tests -p test_paimon1_ci.py
       - name: Plan every released TPC-DS variant with the legacy adapter
         env:
           SF_TPCDS: 'true'

@@ -16,17 +16,22 @@ import tech.streamfusion.operator.TaskOffHeapMemory;
 /** The released source retains discovery/state; Arrow allocations use the common task budget. */
 final class IcebergArrowSource
     implements Source<ArrowBatch, IcebergSourceSplit, IcebergEnumeratorState> {
-  private final IcebergSource<ArrowBatch> delegate;
+  private final IcebergSource<ArrowBatch> reader;
+  private final IcebergSource<?> enumerator;
   private final IcebergArrowReaderFunction function;
 
-  IcebergArrowSource(IcebergSource<ArrowBatch> delegate, IcebergArrowReaderFunction function) {
+  IcebergArrowSource(
+      IcebergSource<ArrowBatch> reader,
+      IcebergSource<?> enumerator,
+      IcebergArrowReaderFunction function) {
     this.function = function;
-    this.delegate = delegate;
+    this.reader = reader;
+    this.enumerator = enumerator;
   }
 
   @Override
   public Boundedness getBoundedness() {
-    return delegate.getBoundedness();
+    return enumerator.getBoundedness();
   }
 
   @Override
@@ -35,7 +40,7 @@ final class IcebergArrowSource
     TaskOffHeapMemory.registerMetrics(context.metricGroup());
     function.registerMetrics(context.metricGroup());
     return new IcebergArrowSourceReader(
-        delegate.createReader(context),
+        reader.createReader(context),
         context.metricGroup().getIOMetricGroup().getNumRecordsInCounter(),
         context.metricGroup().getIOMetricGroup().getNumRecordsOutCounter(),
         function);
@@ -44,22 +49,22 @@ final class IcebergArrowSource
   @Override
   public SplitEnumerator<IcebergSourceSplit, IcebergEnumeratorState> createEnumerator(
       SplitEnumeratorContext<IcebergSourceSplit> context) {
-    return delegate.createEnumerator(context);
+    return enumerator.createEnumerator(context);
   }
 
   @Override
   public SplitEnumerator<IcebergSourceSplit, IcebergEnumeratorState> restoreEnumerator(
       SplitEnumeratorContext<IcebergSourceSplit> context, IcebergEnumeratorState state) {
-    return delegate.restoreEnumerator(context, state);
+    return enumerator.restoreEnumerator(context, state);
   }
 
   @Override
   public SimpleVersionedSerializer<IcebergSourceSplit> getSplitSerializer() {
-    return delegate.getSplitSerializer();
+    return enumerator.getSplitSerializer();
   }
 
   @Override
   public SimpleVersionedSerializer<IcebergEnumeratorState> getEnumeratorCheckpointSerializer() {
-    return delegate.getEnumeratorCheckpointSerializer();
+    return enumerator.getEnumeratorCheckpointSerializer();
   }
 }

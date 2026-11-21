@@ -26,7 +26,11 @@ jobs:
           persist-credentials: false
           filter: blob:none
           sparse-checkout-cone-mode: false
-          sparse-checkout: /bin/ci-plan.py
+          sparse-checkout: |
+            /bin/ci-plan.py
+            /dev/tools/__init__.py
+            /dev/tools/ci/__init__.py
+            /dev/tools/ci/plan.py
       - id: select
         env:
           GH_TOKEN: ${{ github.token }}

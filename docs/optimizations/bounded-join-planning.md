@@ -16,16 +16,28 @@ native Cartesian plan that lost to stock. These shared-host cohorts include
 full scans, transposes, JNI, blocking shuffles, sinks and completed job results;
 their variability and earlier failures remain in the [TPC-H evidence](../benchmarks/tpch.md).
 
-The planner also preserves Flink's reuse of a shared unary aggregate subplan.
-It runs the host subplan reuser before native substitution, counts consumers of
-the admitted shared aggregate, and preserves that subtree's digest through
-Flink's clone-and-reuse cycle. The existing native share operator then gives
-each branch a retained Arrow buffer view. Other native nodes retain their
-single-consumer digest barriers. Both host reuse switches and native source
-sharing must be enabled. Scheduling, replay and memory accounting remain with
-their existing owners; no result cache is introduced.
+The planner also preserves Flink's reuse of eligible shared columnar subplans,
+including aggregates, joins, unions and connector scans. It runs the host subplan
+reuser before native substitution and only preserves a native subtree's digest
+when it can attach the retained-buffer share operator. A reused hash exchange
+shares the producer before the shuffle and remains visible to joins and aggregates
+that verify its distribution. If Flink's input-priority resolver must split a
+shared hash boundary, the planner uses another blocking hash exchange over that
+producer with the same routing keys. Both host reuse switches and native source
+sharing must be enabled. The share operator uses the deployed output count when
+retaining Arrow buffers.
 
-Sharing reduced Q15's native median from 1,393.73 ms to 794.67 ms in separate
+Originally, sharing reduced Q15's native median from 1,393.73 ms to 794.67 ms in separate
 cohorts, but the matching stock median was 596.21 ms. This remains a regression
 to optimize and is not claimed as acceleration. The complete 22-query goal
 remains open while its performance and validation work is unfinished.
+
+For a composite NULL-safe hash semi-join with no residual predicate, DataFusion
+groups the non-preserved build side by its typed keys before constructing the hash
+table. A probe row needs only one match. Grouping removes repeated build tuples,
+including tuples containing NULL, while retaining every matching probe row. The
+aggregate and join use the task's DataFusion memory pool. This follows the same
+membership reduction principle as Comet's right-key reduction before a semi-join
+sort, using the existing DataFusion aggregate executor for composite keys. The
+[Iceberg TPC-DS follow-up](../connectors/iceberg.md#tpc-ds-regression-follow-up)
+records the worker profiles and matched release timings for Q14a and Q14b.

@@ -102,11 +102,11 @@ class TestRuntimePreparationTest(unittest.TestCase):
                         self.assertEqual("0", result.get("failures"))
 
     def test_each_line_prepares_its_own_runtime_and_preserves_download_failure(self):
-        source = RUNNER.read_text()
+        source = (RUNNER.parents[1] / "dev/flink-suite/runner/prepare.sh").read_text()
         delta_start = source.index("prepare_delta_maven() {")
         delta_end = source.index("\n}\n", delta_start) + len("\n}\n")
         start = source.index('if [[ "${SUITE_MODE}" == "prepare" ]]; then\n')
-        end = source.index('\nif [[ -n "${FLINK_SUITE_SHARD:-}" ]]; then', start)
+        end = len(source)
         command = source[delta_start:delta_end] + source[start:end]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -214,7 +214,7 @@ class TestRuntimePreparationTest(unittest.TestCase):
 
 
     def test_delta_consumer_tests_offline_after_the_required_preparation(self):
-        source = RUNNER.read_text()
+        source = (RUNNER.parents[1] / "dev/flink-suite/runner/execute.sh").read_text()
         start = source.index('  if [[ "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" != "true" ]]; then\n'
                              '    prepare_delta_maven || exit $?')
         end = source.index('\nelif [[ "${SUITE_MODE}" == "paimon" ]]; then', start)

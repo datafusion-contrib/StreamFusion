@@ -55,7 +55,7 @@ jobs:
           path: |
             .flink-suite/${{ inputs.line }}/m2
             .flink-suite/${{ inputs.line }}/maven-wrapper
-          key: upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-${{ hashFiles('**/pom.xml', 'dev/flink-suite/settings.xml', 'bin/flink-suite.sh', 'bin/ci-maven-dependencies.py') }}
+          key: upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-${{ hashFiles('**/pom.xml', 'dev/flink-suite/settings.xml', 'bin/flink-suite.sh', 'dev/flink-suite/runner/*.sh', 'bin/ci-maven-dependencies.py', 'dev/tools/ci/maven_dependencies.py') }}
           restore-keys: |
             upstream-m2-${{ runner.os }}-${{ runner.arch }}-jdk17-${{ inputs.version }}-
       - name: Restore the compiled pinned Flink checkout
@@ -63,7 +63,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .flink-suite/${{ inputs.line }}/flink-${{ inputs.version }}
-          key: upstream-classes-ubuntu2404-${{ runner.arch }}-${{ steps.java.outputs.version }}-${{ inputs.version }}-${{ hashFiles('bin/flink-suite.sh', 'dev/flink-suite/settings.xml', '.github/workflows/flink-suite-line.yml') }}
+          key: upstream-classes-ubuntu2404-${{ runner.arch }}-${{ steps.java.outputs.version }}-${{ inputs.version }}-${{ hashFiles('bin/flink-suite.sh', 'dev/flink-suite/runner/*.sh', 'dev/flink-suite/settings.xml', '.github/workflows/flink-suite-line.yml') }}
       - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
         with:

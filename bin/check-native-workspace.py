@@ -1,105 +1,11 @@
 #!/usr/bin/env python3
-"""Check package dependencies and, optionally, the built JNI export boundaries."""
-
-import argparse
-import json
+"""Compatibility entry point; implementation lives in dev.tools.checks.native_workspace."""
 from pathlib import Path
-import re
-import subprocess
 import sys
 
-
-# Iceberg maintenance uses DataFusion's existing external SortExec inside its own DSO.
-# Keep the SQL planner, session and StreamFusion engine outside that connector.
-ICEBERG_SORT_DEPENDENCIES = {
-    "datafusion-common", "datafusion-common-runtime", "datafusion-doc",
-    "datafusion-execution", "datafusion-expr", "datafusion-expr-common",
-    "datafusion-functions", "datafusion-functions-aggregate-common",
-    "datafusion-functions-window-common", "datafusion-macros",
-    "datafusion-physical-expr", "datafusion-physical-expr-common", "datafusion-physical-plan",
-}
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--libraries", type=Path, help="Cargo output directory containing the DSOs")
-    args = parser.parse_args()
-    root = Path(__file__).resolve().parent.parent
-    metadata = json.loads(subprocess.check_output([
-        "cargo", "metadata", "--locked", "--format-version", "1",
-        "--manifest-path", str(root / "native/Cargo.toml"),
-    ], text=True))
-    packages = {package["id"]: package for package in metadata["packages"]}
-    nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
-    owners = {
-        "streamfusion": "Java_tech_streamfusion_Native_",
-        "streamfusion-fluss": "Java_tech_streamfusion_fluss_NativeFluss_",
-        "streamfusion-kafka": "Java_tech_streamfusion_kafka_NativeKafka_",
-        "streamfusion-paimon": "Java_tech_streamfusion_paimon_NativePaimon_",
-        "streamfusion-iceberg": "Java_tech_streamfusion_iceberg_NativeIceberg_",
-        "streamfusion-orc": "Java_tech_streamfusion_orc_NativeOrc_",
-        "streamfusion-parquet": "Java_tech_streamfusion_parquet_NativeParquet_",
-    }
-    for name in ("json", "csv", "raw", "avro", "protobuf"):
-        owners[f"streamfusion-{name}"] = (
-            f"Java_tech_streamfusion_format_{name}_Native{name.title()}Format_"
-        )
-
-    for package_id in metadata["workspace_members"]:
-        package = packages[package_id]
-        name = package["name"]
-        cdylibs = [target for target in package["targets"] if "cdylib" in target["crate_types"]]
-        assert bool(cdylibs) == (name in owners), f"unexpected library target for {name}"
-        if name in {"streamfusion-kafka", "streamfusion-format-support"}:
-            codecs = {"arrow-avro", "prost", "prost-types", "prost-reflect", "simd-json", "csv-core"}
-            normal = [dep for dep in package["dependencies"] if dep["kind"] is None]
-            assert not (codecs & {dep["name"] for dep in normal}), (
-                f"{name} links format implementations instead of their owning optional library"
-            )
-            if name == "streamfusion-kafka":
-                assert all("json" not in dep["features"] for dep in normal if dep["name"] == "arrow"), (
-                    "Kafka must not enable Arrow's JSON encoder"
-                )
-        if name in owners and name != "streamfusion":
-            pending = [package_id]
-            seen = set()
-            while pending:
-                dependency = pending.pop()
-                if dependency in seen:
-                    continue
-                seen.add(dependency)
-                dep_name = packages[dependency]["name"]
-                sort_dependency = name == "streamfusion-iceberg" and dep_name in ICEBERG_SORT_DEPENDENCIES
-                assert dep_name != "streamfusion" and (
-                    not dep_name.startswith("datafusion") or sort_dependency
-                ), (
-                    f"{name} reaches engine dependency {dep_name}"
-                )
-                if dependency != package_id and dep_name in owners:
-                    raise AssertionError(f"{name} links another deployable library: {dep_name}")
-                pending.extend(
-                    dep["pkg"] for dep in nodes[dependency]["deps"]
-                    if any(kind["kind"] is None for kind in dep["dep_kinds"])
-                )
-
-        if not cdylibs or args.libraries is None:
-            continue
-        suffix = "dylib" if sys.platform == "darwin" else "so"
-        library = args.libraries / f"lib{cdylibs[0]['name']}.{suffix}"
-        if name in {"streamfusion-paimon", "streamfusion-iceberg"} and not library.exists():
-            # The optional Maven connector profiles build these libraries. Its JNI tests require it;
-            # the default reactor still checks the dependency graph without building the module.
-            continue
-        command = ["nm", "-gU"] if sys.platform == "darwin" else ["nm", "-D", "--defined-only"]
-        symbols = subprocess.check_output(command + [str(library)], text=True)
-        exports = set(re.findall(r"(?:^|\s)_?(Java_\w+)", symbols, re.MULTILINE))
-        assert exports, f"{library} exports no JNI entry points"
-        foreign = sorted(symbol for symbol in exports if not symbol.startswith(owners[name]))
-        assert not foreign, f"{library} exports another class's entry points: {foreign}"
-        if name != "streamfusion":
-            assert "JNI_OnLoad" not in symbols, f"{library} exports the engine's load hook"
-    print("Native package and JNI export boundaries verified.")
-
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from dev.tools.checks.native_workspace import main
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

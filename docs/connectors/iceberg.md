@@ -1,8 +1,9 @@
 # Apache Iceberg
 
-**Status: partial streaming source, sink, and data-file maintenance.**
+**Status: native Parquet payloads for admitted batch and streaming SQL sources and sinks,
+plus data-file maintenance.**
 
-Supported streaming SQL sources and sinks accelerate automatically when the optional
+Supported batch and streaming SQL sources and sinks use the native paths when the optional
 module is installed and the native planner is enabled. Unsupported contracts retain
 the stock connector through the normal admission checks.
 The admitted path is the normal legacy sink, unencrypted
@@ -33,9 +34,217 @@ No sibling Iceberg build is required.
 The normal Flink 2.2 release build stages and packages its own platform native
 library, includes the connector in deployment archives and Maven publication,
 and checks package/JNI isolation. The ordinary optional-module CI matrix runs its
-streaming unit/upstream selection on JDK 17. Flink 1.18 release bundles omit it.
+unit and upstream batch/streaming selection on JDK 17. Flink 1.18 release bundles omit it.
 Javadoc uses the same Iceberg source selection as compilation, so the inherited
 Flink compatibility source directory cannot introduce unrelated connector APIs.
+
+## Bounded batch source and sink
+
+The deployed batch SQL planner can replace either Iceberg boundary independently. When the
+query between them runs columnar, the scan, computation and write exchange Arrow batches.
+Use `streamfusion.operator.icebergSource.enabled` or `streamfusion.operator.icebergSink.enabled`
+to disable a boundary.
+
+Bounded FLIP-27 reads preserve the Iceberg Java snapshot or branch selection, split planning,
+parallelism, split assignment, and serializers. The same reader as streaming decodes admitted
+Parquet tasks with iceberg-rust, applies deletes, and emits Arrow. This includes v1/v2/v3
+snapshots, selected columns and zero-column counts, supported predicates, nested payloads and
+schema evolution, Parquet equality/position deletes and v3 Puffin deletion vectors. The
+per-file Java fallback and native task counters apply in batch too.
+
+Bounded legacy writes use the same Parquet encoder, Java task writers and Java committers as
+streaming. Iceberg Java still chooses partitions, handles file rolling and branch commits,
+encodes deletes, and uses `none`, `hash`, or `range` distribution. The writer and committer
+finish on end of input, including without periodic checkpoints. Batch input is insert-only.
+Identifier-key writes on v2/v3 still support Iceberg upserts, which can write deletes against
+existing rows. Bounded `INSERT OVERWRITE` uses Iceberg Java's replacement of the partitions
+written by the job. Top-level `NOT NULL` errors use the Flink error policy.
+
+Batch shares the streaming physical-format, type and option exclusions. Pushed source limits,
+legacy source APIs, metadata tables and unsupported source abilities retain stock SQL scans.
+Normal Sink V2, dynamic SQL sinks, unsupported schema conversions or Flink constraint policies,
+and unsupported sink abilities retain stock SQL writes. Iceberg's direct dynamic Arrow sink and
+maintenance jobs have their own entry points described below.
+
+### TPC-DS scale 1 comparison, 2026-11-20
+
+This comparison uses all 103 SQL variants and 24 table definitions from the
+[Flink 2.2.1 TPC-DS workload](../benchmarks/tpcds.md), with the Trino 1.4 generator at
+SF1. Both engines read the same Iceberg v2 Snappy Parquet files. Every input table has
+four occupied Iceberg partitions and four data files, for 19,557,335 rows across 96 files.
+The sales and returns facts bucket on order or ticket number. Other tables bucket on
+their first key, except the five-row warehouse dimension, which uses four explicit shards
+and a view exposing the original columns.
+
+Each unchanged TPC-DS query runs inside an outer projection that hashes one result field
+to an integer in `0..3`, with a fixed value for NULL. Both engines commit those rows to an
+Iceberg v2 table partitioned by that integer and configured for hash distribution. A query
+can populate fewer than four output partitions when it produces few rows or repeated
+keys. The verifier checks the populated partitions and the complete typed row multiset in
+every committed result with the Iceberg Java reader.
+
+The local Apple M4 run uses Temurin 17.0.17, Flink 2.2.1, Iceberg 1.12.0 and release
+StreamFusion libraries, with reader and writer parallelism four, 512 MiB task off-heap,
+1 GiB Flink managed memory and 8,192-row transposes. Adaptive parallelism is disabled.
+Both engines use the same join-reordering and 10 MiB broadcast settings and production
+shuffle serialization. The timer spans SQL submission through successful final commit.
+Fixture creation, output DDL, and committed readback are outside the timer. Each variant
+has one warmup and three measured runs per engine, alternating which engine goes first.
+
+The default StreamFusion configuration matched stock on **102 of 103 variants**. The sum
+of median latencies on those 102 variants was **163.634 s for stock Flink** and
+**202.605 s for StreamFusion**, or **23.8% more elapsed time**. StreamFusion's median was
+lower on 76 variants. The geometric mean of the per-variant stock-to-StreamFusion ratios
+was 1.055×.
+
+| Variant | Stock Flink median | StreamFusion median |
+| --- | ---: | ---: |
+| Q14a | 2.324 s | 29.546 s |
+| Q14b | 2.853 s | 18.884 s |
+| Q72 | 36.848 s | 36.304 s |
+| Q97 | 0.933 s | 0.402 s |
+
+The 306 measured StreamFusion jobs with matching results decoded 10,734 native Iceberg
+file tasks and recorded zero Java file-task fallbacks. All 786 committed StreamFusion data
+files were written by parquet-rs. Native query computation ran on 10 variants. The other
+92 used Flink query computation. Output occupancy was four partitions for 43 variants,
+three for 12, two for seven, and one for 40.
+
+In that run, Q28 failed with `bounded task input schema changed` as NativeExpand handed a batch to
+the bounded native operator. The failure reproduced with the native scan and stock sink.
+A stock scan with native computation and the native sink committed the exact stock result.
+Keeping both native Iceberg boundaries and using Flink computation also matched the stock
+result, with 24 native Iceberg read tasks and one native output file. These single-run
+controls isolate the failure to the native scan and native compute combination. The default
+timing totals cover the 102 variants with complete pairs.
+The [per-variant report](../benchmarks/results/iceberg-tpcds-sf1-4x4-20261120.csv)
+includes warmup and measured latencies, committed result hashes, native execution witnesses
+and the failed variant.
+
+### TPC-DS regression follow-up
+
+Flink's Q14a execution graph had six scans and 15 joins. StreamFusion's graph had
+57 connector scans and 48 joins. JFR recorded 878 samples in the native join
+operator, 860 of them under three copies of the same NULL-safe hash semi-join.
+Native stack sampling found Arrow gathers and DataFusion's hash match enumeration
+at the busiest leaves. Retaining shared subplans cut Q14a file reads from 228 to 24
+and Q14b from 160 to 32. In a separate one-pair check, Q14a still took 30.403 s
+after the scan reduction. DataFusion now groups the non-preserved build keys of
+composite NULL-safe hash semi-joins whose only predicate is the key match. This
+removes duplicate build matches before they reach the join.
+
+Q23a and Q23b originally ran Flink compute. JFR showed row hash joins and the
+conversions at the Arrow boundaries. The Iceberg batch adapter now advertises the
+format's UTF-8 guarantee, and the common Arrow bridge validates the bytes. Both
+queries now run native compute, and file reads fell from 48 and 40 to 28 each.
+
+Q28 exposed a mismatch between the file-reader schema, which carried Parquet field
+IDs, and the execution schema of NULL literals emitted by grouping sets. The
+adapter gives file IDs to the Rust reader for projection and schema evolution, then
+emits the canonical Arrow execution schema. Q28 now passes exact committed parity
+with native compute, 24 native read tasks and one native output file per run.
+
+The focused, unprofiled release comparison used one warmup and three alternating
+measured pairs per query. These focused binaries used the system allocator.
+[Individual trials and result hashes](../benchmarks/results/iceberg-tpcds-sf1-4x4-focused-20261120.csv)
+are available for both cohorts.
+
+| Variant | Stock Flink before, s | StreamFusion before, s | Stock Flink after, s | StreamFusion after, s |
+| --- | ---: | ---: | ---: | ---: |
+| Q14a | 2.701 | 29.758 | 2.769 | 2.146 |
+| Q14b | 3.033 | 19.105 | 3.003 | 1.734 |
+| Q23a | 2.584 | 4.858 | 2.624 | 1.434 |
+| Q23b | 2.529 | 4.834 | 2.642 | 1.489 |
+| Q28 | | failed in the original suite | 1.015 | 0.450 |
+| Q78 | 2.125 | 1.950 | 2.158 | 2.393 |
+
+Q78 originally measured 4.234 s versus 2.049 s for stock Flink. Its focused
+StreamFusion trials varied from 0.935 to 2.290 s before and 1.129 to 3.246 s after.
+The native LZ4 decoder produced about 574 MB of Arrow shuffle data per job in both cohorts.
+
+The first production-allocator sweep kept the 512 MiB task off-heap budget. It matched
+100 variants and won 99, with summed medians of 68.610 s for StreamFusion and 127.114 s
+for stock Flink. All 99 successful variants shared with the original sweep retained the
+same committed result hash. Q24a, Q24b and Q72 exhausted the native hash-join budget.
+Q88 was the sole completed loss at 8.315 s versus 4.218 s. Its eight branches shared one
+store-sales scan but built separate copies of the same hash shuffle.
+[512 MiB sweep](../benchmarks/results/iceberg-tpcds-sf1-4x4-512mib-20261120.csv).
+
+Sharing the producer below the hash exchange reduced each Q24 variant from 11 to seven
+joins and let both complete under the same 512 MiB budget. Q88 went from 63 to 42
+exchanges. In one-pair checks, StreamFusion took 1.662 s on Q24a, 1.620 s on Q24b and
+2.727 s on Q88. Stock Flink took 2.249 s, 2.065 s and 4.714 s in those pairs.
+Q72 still exhausted 1 GiB, with one large build spread across four subtasks. At 2 GiB
+both engines committed the original exact result. That sizing pair took 47.422 s on
+StreamFusion and 41.144 s on stock Flink. Native operator counters recorded 56.2 million
+rows from the sales/inventory join, 11.9 million after the sold-date join, and 68,349
+after the inventory-week join. The native LZ4 decoder produced 5.46 GB of Arrow shuffle data.
+
+The final production sweep used 2 GiB task off-heap on both engines and retained the
+same four-partition fixture, output contract, and trial schedule. All **103 variants**
+matched, including all warmups. The 102 successful variants from the original sweep
+also retained their original result hashes. The sum of the three-trial medians was
+**172.230 s for stock Flink** and **108.419 s for StreamFusion**, a **37.0% reduction**.
+StreamFusion won 102 variants and the per-query speedup geometric mean was 2.042×.
+
+| Variant | Stock Flink median, s | StreamFusion median, s |
+| --- | ---: | ---: |
+| Q14a | 2.614 | 2.104 |
+| Q14b | 2.918 | 1.735 |
+| Q23a | 2.617 | 1.089 |
+| Q23b | 2.559 | 1.145 |
+| Q24a | 1.842 | 1.449 |
+| Q24b | 1.863 | 1.534 |
+| Q28 | 1.061 | 0.410 |
+| Q72 | 40.480 | 45.548 |
+| Q78 | 2.081 | 0.847 |
+| Q88 | 4.066 | 2.228 |
+
+All 309 measured StreamFusion jobs showed native computation and native Iceberg
+reads. They decoded 6,849 native file tasks without a Java file-task fallback. All
+789 StreamFusion output files were written by parquet-rs. The output occupied four
+partitions on 43 variants, three on 12, two on seven and one on 41.
+[Final per-variant trials and result hashes](../benchmarks/results/iceberg-tpcds-sf1-4x4-final-20261120.csv).
+
+With JDK 17 and Cargo on `PATH`, run the same comparison locally with the
+`tpcds` and `bench` Maven profiles and a fresh scratch directory.
+
+```sh
+tpcds_dir=$(mktemp -d)
+SF_TPCDS=true mvn -Piceberg,bench,tpcds -pl streamfusion-iceberg -am \
+  -Dtest=IcebergTpcdsBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dsf.tpcds.directory="$tpcds_dir" test
+```
+
+Use `-Dsf.tpcds.queries=14a,14b,23a,23b,28,78` for the focused cohort. Add
+`-Dsf.tpcds.profile=true` for separate JFR recordings. The scratch directory records
+execution plans, trial times, file counters and exact-result hashes. The default
+task off-heap budget is 512 MiB, and `-Dsf.tpcds.offHeapMiB=2048` selects 2 GiB for both
+engines.
+
+### Bounded copy timing
+
+A local Apple M4 run used Flink 2.2.1, Java 17 and release native libraries with parallelism two.
+Four Iceberg v2 Parquet files held consecutive integer IDs, a 37-value integer category and
+a bigint quantity. The SQL kept the upper half of IDs, added one to each ID, doubled the
+quantity, and committed to an unpartitioned Iceberg v2 table using Zstd level 3. Timings include
+SQL planning, file I/O, job startup, and commit. Fixture creation and stock readback of every
+committed row were outside the timer.
+
+The previous StreamFusion path ran native computation with the Java Iceberg source and sink.
+The new path ran the same computation with two native file tasks, no fallback reads, and
+native Parquet output. One warmup preceded three measured runs per size, with modes in rotating
+order. The first native warmup for 200,000 inputs took 1.318 s, compared with 0.713 s for stock
+Flink and 0.624 s for the previous path.
+
+| Input rows | Stock Flink | Previous StreamFusion | Native Iceberg and compute |
+| ---: | ---: | ---: | ---: |
+| 200,000 | 0.536 s (0.529–0.574) | 0.557 s (0.534–0.565) | 0.508 s (0.507–0.523) |
+| 2,000,000 | 0.809 s (0.801–0.890) | 0.892 s (0.838–0.927) | 0.617 s (0.603–0.667) |
+
+The table reports median and observed range for this local numeric workload.
+
+## Streaming sink and shared data writer
 
 The first implementation boundary is the normal legacy streaming sink. A
 version-gated adapter replaces its task-writer factory before job serialization,
@@ -239,7 +448,7 @@ its output to Arrow. Source counters `nativeParquetTasks` and `stockFallbackTask
 that distinction visible. Mixed Parquet/Avro/ORC tasks preserve file ordinals and restored
 logical offsets with changed batch sizes. This fallback is not native read coverage.
 
-Bounded reads, limits, metadata tables, nested predicate pushdown, nested partition
+Pushed limits, metadata tables, nested predicate pushdown, nested partition
 source fields, nested schemas with legacy name mappings, non-null initial defaults,
 TIME/binary predicates and unsupported source abilities keep the stock
 SQL source. Java-owned streaming

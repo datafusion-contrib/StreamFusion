@@ -29,6 +29,12 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
+            <groupId>tech.streamfusion</groupId>
+            <artifactId>streamfusion-test-utils${streamfusion.artifact.suffix}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.apache.iceberg</groupId>
             <artifactId>iceberg-flink-runtime-2.2</artifactId>
             <version>${iceberg.version}</version>
@@ -88,6 +94,29 @@
     </build>
     <profiles>
         <profile>
+            <id>tpcds</id>
+            <dependencies><dependency>
+                <groupId>io.trino.tpcds</groupId><artifactId>tpcds</artifactId>
+                <version>1.4</version><scope>test</scope>
+            </dependency></dependencies>
+            <build><plugins><plugin>
+                <groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution><id>iceberg-tpcds-tests</id><phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration><sources><source>src/tpcds/java</source></sources></configuration>
+                    </execution>
+                    <execution><id>iceberg-tpcds-queries</id><phase>generate-test-resources</phase>
+                        <goals><goal>add-test-resource</goal></goals>
+                        <configuration><resources><resource><directory>${project.basedir}/../streamfusion-paimon/src/tpcds/resources</directory></resource></resources></configuration>
+                    </execution>
+                </executions>
+            </plugin><plugin>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+                <configuration><enableAssertions>false</enableAssertions></configuration>
+            </plugin></plugins></build>
+        </profile>
+        <profile>
             <id>universal</id>
             <build><resources>
                 <resource>
@@ -101,11 +130,6 @@
             </resources></build>
         </profile>
         <profile><id>iceberg-nexmark</id><dependencies>
-                <dependency>
-                    <groupId>tech.streamfusion</groupId>
-                    <artifactId>streamfusion-test-utils${streamfusion.artifact.suffix}</artifactId>
-                    <version>${project.version}</version><scope>test</scope>
-                </dependency>
             <dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-kafka${streamfusion.artifact.suffix}</artifactId><version>${project.version}</version><scope>test</scope></dependency>
             <dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-json${streamfusion.artifact.suffix}</artifactId><version>${project.version}</version><scope>test</scope></dependency>
             <dependency><groupId>tech.streamfusion</groupId><artifactId>streamfusion-core${streamfusion.artifact.suffix}</artifactId><version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>

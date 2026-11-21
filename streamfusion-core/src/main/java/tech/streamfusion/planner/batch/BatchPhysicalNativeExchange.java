@@ -37,6 +37,10 @@ final class BatchPhysicalNativeExchange extends BatchPhysicalNativeSingleRel
     return java.util.Arrays.equals(keys, expected);
   }
 
+  boolean isHashPartitioned() {
+    return !broadcast && keys.length != 0;
+  }
+
   private BatchPhysicalNativeExchange(
       RelNode original, RelNode input, int[] keys, NativePlanDetails details) {
     super(original, input, details);

@@ -1,4 +1,4 @@
-# 47 — Iceberg keeps its released Java streaming control plane
+# 47 — Iceberg keeps its released Java control plane
 
 Comet provides the model for explicit Iceberg file-task metadata and Arrow/JNI ownership.
 StreamFusion retains Flink's streaming discovery, split ordinals, row offsets, watermark
@@ -6,6 +6,19 @@ emitter, operator/coordinator state, rolling writers, delete encoders and commit
 Apache iceberg-rust reads admitted Parquet tasks; parquet-rs encodes one Java-selected
 data file at a time. Java FileIO supplies credentials, paths, streams and positional reads.
 This extends the [encoding-only sink boundary](22-parquet-sink-encoding-only-native.md).
+
+The bounded SQL path retains the stock FLIP-27 enumerator and its split plan, including
+splits cached while Iceberg infers parallelism. It uses the same Arrow file reader as
+streaming. The shared legacy sink adapter preserves the Java writer and committer's
+end-of-input flush and commit. Bounded overwrite goes through that committer's existing
+partition replacement. The two paths use the same optional Java module and native library.
+
+Iceberg field IDs travel in the file-reader schema used by Rust to resolve projected
+and evolved files. SQL batches use the canonical Arrow execution schema so a source
+column and an equivalent computed value have the same field metadata. Maintenance
+keeps the file metadata in its output schema for the subsequent file writer. The
+bounded connector advertises Iceberg's UTF-8 string contract to batch planning, and
+the common Arrow bridge validates string bytes before native evaluation.
 
 Flink's range sink adds another host boundary: its statistics operator emits borrowed
 row views plus occasional control records into a stateful Java range partitioner.

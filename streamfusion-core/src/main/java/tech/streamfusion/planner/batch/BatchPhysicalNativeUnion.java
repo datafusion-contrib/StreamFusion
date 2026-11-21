@@ -19,10 +19,20 @@ import tech.streamfusion.planner.common.NativeRelDigests;
 
 final class BatchPhysicalNativeUnion extends Union
     implements BatchPhysicalRel, ColumnarInput, ColumnarOutput {
-  private final long reuseBarrier = NativeRelDigests.nextId();
+  private final long reuseBarrier;
+  private boolean shared;
 
   BatchPhysicalNativeUnion(Union original, List<RelNode> inputs) {
     super(original.getCluster(), original.getTraitSet(), inputs, true);
+    shared =
+        original instanceof BatchPhysicalNativeUnion
+            && ((BatchPhysicalNativeUnion) original).shared;
+    reuseBarrier =
+        shared ? ((BatchPhysicalNativeUnion) original).reuseBarrier : NativeRelDigests.nextId();
+  }
+
+  void markSharedCopies() {
+    shared = true;
   }
 
   @Override

@@ -143,12 +143,12 @@ jobs:
           save-if: false
 
       - name: Test fork result reporting
-        run: python3 -m unittest discover -s bin -p test_fork_ci_status.py
+        run: python3 -m unittest discover -s dev/tools/tests -p test_fork_ci_status.py
 
       - name: Check generated expression protocol
         run: |
           python3 bin/generate-expression-protocol.py --check
-          python3 -m unittest discover -s bin -p test_expression_protocol.py
+          python3 -m unittest discover -s dev/tools/tests -p test_expression_protocol.py
 
       - name: Run native test suite
         working-directory: native
@@ -210,30 +210,13 @@ jobs:
         run: |
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml package
           python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'
-          python3 -m unittest discover -s bin -p 'test_check_flink_suite_*.py'
-          python3 -m unittest discover -s bin -p 'test_hudi_suite.py'
-          python3 -m unittest discover -s bin -p 'test_check_native_glibc.py'
-          python3 -m unittest discover -s bin -p 'test_check_native_tls.py'
-          python3 -m unittest discover -s bin -p 'test_ci_free_disk.py'
-          python3 -m unittest discover -s bin -p 'test_ci_module_groups.py'
-          python3 -m unittest discover -s bin -p 'test_ci_lake_tests.py'
-          python3 -m unittest discover -s bin -p 'test_ci_runtime_test_shards.py'
-          python3 -m unittest discover -s bin -p 'test_ci_canonical_jobs.py'
-          python3 -m unittest discover -s bin -p 'test_ci_canonical_coverage.py'
-          python3 -m unittest discover -s bin -p 'test_ci_java_build.py'
-          python3 -m unittest discover -s bin -p 'test_ci_native_source.py'
-          python3 -m unittest discover -s bin -p 'test_ci_native_test_artifact.py'
-          python3 -m unittest discover -s bin -p 'test_ci_maven_dependencies.py'
-          python3 -m unittest discover -s bin -p 'test_ci_maven_cache.py'
-          python3 -m unittest discover -s bin -p 'test_ci_plan.py'
-          python3 -m unittest discover -s bin -p 'test_ci_campaign.py'
-          python3 -m unittest discover -s bin -p 'test_profile_ci.py'
-          python3 -m unittest discover -s bin -p 'test_profile_canonical_ci.py'
-          python3 -m unittest discover -s bin -p 'test_profile_runtime_ci.py'
-          python3 -m unittest discover -s bin -p 'test_ci_jfr.py'
-          python3 -m unittest discover -s bin -p 'test_bench_jvm_previous.py'
-          python3 -m unittest discover -s bin -p 'test_package_release.py'
-          python3 -m unittest discover -s bin -p 'test_build_release.py'
+          python3 -m dev.tools.tests \
+            --exclude test_check_java_bytecode.py \
+            --exclude test_module_source_ownership.py \
+            --exclude test_paimon_host_classpath.py \
+            --exclude test_paimon1_ci.py \
+            --exclude test_expression_protocol.py \
+            --exclude test_fork_ci_status.py
 
       - name: Test Flink 1.18 native and fallback contract selection
         if: matrix.line == '1.18' && matrix.jdk == '17' && matrix.shard == 1
@@ -294,7 +277,7 @@ jobs:
         if: matrix.shard == 1
         run: |
           mvn -B -ntp ${{ matrix.profile }} package -DskipTests -Dnative.build.skip=true -Dsf.protobuf.checkStaleness=true
-          python3 -m unittest discover -s bin -p 'test_check_java_bytecode.py'
+          python3 -m unittest discover -s dev/tools/tests -p 'test_check_java_bytecode.py'
           python3 bin/check-java-bytecode.py
 
       - name: Upload Java failure diagnostics
@@ -693,8 +676,8 @@ jobs:
       - name: Verify Java host APIs and deployment module ownership
         run: |
           mvn --version
-          python3 bin/test_paimon_host_classpath.py
-          python3 bin/test_module_source_ownership.py
+          python3 dev/tools/tests/test_paimon_host_classpath.py
+          python3 dev/tools/tests/test_module_source_ownership.py
 
       # Host-only is still a production Linux/x86_64 release (including mimalloc); cross-platform
       # manifest assembly is covered by the release builder, but does not belong on this smoke path.

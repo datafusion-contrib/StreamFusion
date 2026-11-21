@@ -1,32 +1,53 @@
 package tech.streamfusion.iceberg;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.junit.jupiter.api.extension.BeforeTestExecutionCallback;
-import org.junit.jupiter.api.extension.ConditionEvaluationResult;
-import org.junit.jupiter.api.extension.ExecutionCondition;
 import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.InvocationInterceptor;
+import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
+import tech.streamfusion.NativePlannerTestEnvironment;
 import tech.streamfusion.planner.NativePlanner;
 
-/** Preserves upstream fixtures and assertions while selecting streaming/native execution. */
+/** Selects StreamFusion's planner without changing the published fixtures or assertions. */
 public final class IcebergUpstreamExtension
-    implements ExecutionCondition, BeforeTestExecutionCallback {
+    implements InvocationInterceptor, BeforeTestExecutionCallback {
   @Override
-  public ConditionEvaluationResult evaluateExecutionCondition(ExtensionContext context) {
-    if (context
-            .getTestClass()
-            .map(c -> c.getSimpleName().equals("TestIcebergSourceSql"))
-            .orElse(false)
-        && context.getTestMethod().isPresent()
-        && !java.util.Set.of("testWatermarkValidConfig", "testWatermarkInvalidConfig")
-            .contains(context.getTestMethod().get().getName())) {
-      return ConditionEvaluationResult.disabled("This published SQL case uses batch execution");
+  public void interceptBeforeEachMethod(
+      Invocation<Void> invocation,
+      ReflectiveInvocationContext<Method> method,
+      ExtensionContext context)
+      throws Throwable {
+    if (Boolean.getBoolean("streamfusion.iceberg.suite.native")
+        && method.getExecutable().getName().equals("before")) {
+      installBatchEnvironment(context);
     }
-    String name = context.getDisplayName();
-    if (name.contains("isStreamingJob=false") || name.contains("isStreaming=false")) {
-      return ConditionEvaluationResult.disabled("Iceberg acceleration scope is streaming only");
+    invocation.proceed();
+  }
+
+  private static void installBatchEnvironment(ExtensionContext context) throws Exception {
+    var instance = context.getRequiredTestInstance();
+    var type = context.getRequiredTestClass();
+    Field environment;
+    switch (type.getSimpleName()) {
+      case "TestIcebergSourceSql":
+        environment = type.getSuperclass().getDeclaredField("tEnv");
+        break;
+      case "TestFlinkTableSinkExtended":
+        var mode = type.getDeclaredField("isStreamingJob");
+        mode.setAccessible(true);
+        if (mode.getBoolean(instance)) return;
+        environment = type.getDeclaredField("tEnv");
+        break;
+      default:
+        return;
     }
-    return ConditionEvaluationResult.enabled("Unchanged upstream streaming case");
+    environment.setAccessible(true);
+    // The MiniCluster and parameter injection are ready before the fixture's own setup runs.
+    environment.set(instance, NativePlannerTestEnvironment.createBatch(new Configuration()));
   }
 
   @Override
@@ -43,14 +64,18 @@ public final class IcebergUpstreamExtension
         Object environment = field.get(instance);
         if (environment instanceof StreamTableEnvironment
             || (field.getName().equals("streamingTEnv")
-                && environment instanceof org.apache.flink.table.api.TableEnvironment)) {
-          NativePlanner.install((org.apache.flink.table.api.TableEnvironment) environment);
+                && environment instanceof TableEnvironment)) {
+          NativePlanner.install((TableEnvironment) environment);
+          installed = true;
+        } else if (environment instanceof org.apache.flink.table.api.internal.TableEnvironmentImpl
+            && ((org.apache.flink.table.api.internal.TableEnvironmentImpl) environment).getPlanner()
+                instanceof tech.streamfusion.planner.batch.NativeBatchPlanner) {
           installed = true;
         }
       }
     }
     if (installed) return;
     throw new IllegalStateException(
-        "Selected upstream streaming fixture has no initialized table environment");
+        "Selected upstream Iceberg fixture has no initialized StreamFusion table environment");
   }
 }
