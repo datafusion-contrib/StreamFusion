@@ -209,11 +209,13 @@ async fn partition_input(
             prefix.shrink(hash_build_budget(&batch).min(prefix.size()));
         }
         let bytes = get_record_batch_memory_size(&batch);
-        workspace.try_resize(
-            bytes
-                .saturating_mul(2)
-                .saturating_add(batch.num_rows().saturating_mul(12)),
-        )?;
+        workspace
+            .try_resize(
+                bytes
+                    .saturating_mul(2)
+                    .saturating_add(batch.num_rows().saturating_mul(12)),
+            )
+            .map_err(|error| error.context("partition bounded hash join input"))?;
         partitioner.partition(batch, |index, batch| {
             let writer = match &mut files[index] {
                 Some(writer) => writer,

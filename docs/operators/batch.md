@@ -214,8 +214,9 @@ both inputs are hash-partitioned into temporary Arrow IPC files in Flink's spill
 directories. DataFusion joins each pair of partitions in turn. A partition
 whose hash table still exceeds the budget can use DataFusion's spilling sort-merge
 join before it emits any rows. The `batchJoinSpills` and `batchJoinSpilledBytes`
-counters measure hash partition files. DataFusion nested-loop joins use their
-existing chunked disk-spill path. A composite NULL-safe hash semi-join with no
+counters measure hash partition files. Memory denials during hash partitioning
+and bounded Arrow input and output copies identify the failing stage. DataFusion
+nested-loop joins use their existing chunked disk-spill path. A composite NULL-safe hash semi-join with no
 residual predicate groups the non-preserved build keys before building its hash
 table. The complete SF1 TPC-H release comparison
 now passes all 22 queries with exact rows/types, native source and compute work,

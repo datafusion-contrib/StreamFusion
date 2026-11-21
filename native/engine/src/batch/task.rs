@@ -168,7 +168,8 @@ impl BoundedTask {
                     }
                     pool.preserve_spill_headroom(headroom);
                 }
-                let copied = compact_copy(&batch, &self.input_memory);
+                let copied = compact_copy(&batch, &self.input_memory)
+                    .map_err(|error| error.context("compact bounded Arrow input"));
                 // Retaining plans release the borrowed C Data buffers before keeping a separately
                 // charged native copy. Reductions can instead consume the imported batch directly.
                 drop(batch);
@@ -214,7 +215,8 @@ impl BoundedTask {
                         self.output_memory = self.input_memory.split(budget);
                     }
                 }
-                let copied = compact_copy(&batch, &self.output_memory);
+                let copied = compact_copy(&batch, &self.output_memory)
+                    .map_err(|error| error.context("compact bounded Arrow output"));
                 drop(batch);
                 if self.all_inputs_ended() && self.borrowed_scratch.is_none() {
                     self.input_memory.free();
