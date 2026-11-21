@@ -348,8 +348,11 @@ and compares both engines' invocation inventories. All 349 enabled invocations
 have maintained execution contracts that reject missing expected work,
 unexpected routes and changed fallback reasons. The unchanged upstream
 cases retain their original legacy-source and row-result choices, so many Hudi
-boundaries correctly stay stock while native Calcs execute. The expanded tests
-and Nexmark harness separately require native Hudi source/sink execution.
+boundaries stay stock while eligible native Calcs execute. Twenty nested batch
+invocations retain their existing execution routes and report the row source's
+unverified string representation, with an unsupported Calc collection
+representation also reported in 18 of those invocations. The expanded tests and
+Nexmark harness separately require native Hudi source/sink execution.
 
 Stock Hudi row scans can supply unverified character columns as Binary to
 byte-preserving consumers and supported streaming Calc text expressions. The shared
