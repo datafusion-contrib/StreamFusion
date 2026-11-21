@@ -3,7 +3,9 @@ package tech.streamfusion.operator;
 import org.apache.arrow.c.ArrowArray;
 import org.apache.arrow.c.ArrowSchema;
 import org.apache.arrow.c.Data;
+import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.flink.metrics.Counter;
 import org.apache.flink.streaming.api.operators.BoundedMultiInput;
 import org.apache.flink.streaming.api.operators.InputSelectable;
 import org.apache.flink.streaming.api.operators.InputSelection;
@@ -13,6 +15,7 @@ import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.Native;
 import tech.streamfusion.arrow.ArrowConversion;
+import tech.streamfusion.arrow.ArrowFileBatch;
 import tech.streamfusion.compat.FlinkStreamOperator;
 import tech.streamfusion.operator.batch.BoundedArrowOutput;
 
@@ -38,6 +41,8 @@ public final class NativeBatchJoinOperator extends FlinkStreamOperator<ArrowBatc
   private transient int ended;
   private transient boolean complete;
   private transient long[] stats;
+  private transient Counter spills;
+  private transient Counter spilledBytes;
 
   public NativeBatchJoinOperator(
       RowType left,
@@ -54,9 +59,9 @@ public final class NativeBatchJoinOperator extends FlinkStreamOperator<ArrowBatc
       boolean mergeJoin) {
     schemas =
         new String[] {
-          ArrowConversion.toArrowInputSchema(left, false).toJson(),
-          ArrowConversion.toArrowInputSchema(right, false).toJson(),
-          ArrowConversion.toArrowInputSchema(result, false).toJson()
+          ArrowConversion.toBoundedInputSchema(left).toJson(),
+          ArrowConversion.toBoundedInputSchema(right).toJson(),
+          ArrowConversion.toBoundedInputSchema(result).toJson()
         };
     this.leftKeys = leftKeys.clone();
     this.rightKeys = rightKeys.clone();
@@ -75,6 +80,8 @@ public final class NativeBatchJoinOperator extends FlinkStreamOperator<ArrowBatc
     NativeAllocator.initializeFor(this);
     stats = new long[3];
     getMetricGroup().gauge("batchJoinReservedBytes", () -> stats[2]);
+    spills = getMetricGroup().counter("batchJoinSpills");
+    spilledBytes = getMetricGroup().counter("batchJoinSpilledBytes");
     resultSchema = Schema.fromJSON(schemas[2]);
     inputSchemas = new Schema[] {Schema.fromJSON(schemas[0]), Schema.fromJSON(schemas[1])};
     try (var left = ArrowSchema.allocateNew(NativeAllocator.SHARED);
@@ -136,22 +143,21 @@ public final class NativeBatchJoinOperator extends FlinkStreamOperator<ArrowBatc
 
   private void accept(int port, StreamRecord<ArrowBatch> record) {
     var root = record.getValue().root();
-    try {
+    try (var payload = ArrowFileBatch.of(root)) {
       if ((ended & (1 << port)) != 0)
         throw new IllegalStateException("bounded join input already ended");
       var expected = inputSchemas[port].getFields();
-      var actual = root.getSchema().getFields();
+      var actual = payload.root().getSchema().getFields();
       if (expected.size() != actual.size())
         throw new IllegalStateException("bounded join input width changed");
       for (int column = 0; column < expected.size(); column++) {
-        if (!expected.get(column).getType().equals(actual.get(column).getType())
-            || actual.get(column).getDictionary() != null)
+        if (!hasLayout(expected.get(column), actual.get(column)))
           throw new IllegalStateException("bounded join input representation changed");
       }
       if (!complete) {
         try (var array = ArrowArray.allocateNew(NativeAllocator.SHARED)) {
           Data.exportVectorSchemaRoot(
-              NativeAllocator.SHARED, root, NativeAllocator.DICTIONARIES, array);
+              NativeAllocator.SHARED, payload.root(), NativeAllocator.DICTIONARIES, array);
           try {
             Native.pushBoundedTaskInput(handle, port, array.memoryAddress());
           } finally {
@@ -166,6 +172,17 @@ public final class NativeBatchJoinOperator extends FlinkStreamOperator<ArrowBatc
     if (!complete) drain();
   }
 
+  private static boolean hasLayout(Field expected, Field actual) {
+    if (!expected.getType().equals(actual.getType()) || actual.getDictionary() != null)
+      return false;
+    var expectedChildren = expected.getChildren();
+    var actualChildren = actual.getChildren();
+    if (expectedChildren.size() != actualChildren.size()) return false;
+    for (int index = 0; index < expectedChildren.size(); index++)
+      if (!hasLayout(expectedChildren.get(index), actualChildren.get(index))) return false;
+    return true;
+  }
+
   private void drain() {
     while (true) {
       if (Thread.currentThread().isInterrupted())
@@ -173,6 +190,8 @@ public final class NativeBatchJoinOperator extends FlinkStreamOperator<ArrowBatc
       try (var array = ArrowArray.allocateNew(NativeAllocator.SHARED)) {
         int status = Native.nextBoundedSorter(handle, array.memoryAddress(), 0);
         stats = Native.boundedSorterExecutionStats(handle);
+        spills.inc(stats[0] - spills.getCount());
+        spilledBytes.inc(stats[1] - spilledBytes.getCount());
         if (status == 2) continue;
         if (status == -1) {
           complete = true;

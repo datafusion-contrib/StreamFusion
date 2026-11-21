@@ -154,6 +154,11 @@ public final class ArrowConversion {
     return schema(rowType, preserve, true);
   }
 
+  /** SQL payload schema for retained bounded inputs with no nested changelog sidecars. */
+  public static Schema toBoundedInputSchema(RowType rowType) {
+    return ArrowFileBatch.schema(toArrowInputSchema(rowType, false));
+  }
+
   public static Schema toBinaryRowKeySchema(RowType rowType) {
     return NestedRepresentation.withBinaryRows(toArrowInputSchema(rowType, true));
   }

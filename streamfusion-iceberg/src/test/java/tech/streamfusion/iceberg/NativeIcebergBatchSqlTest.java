@@ -3,6 +3,7 @@ package tech.streamfusion.iceberg;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
@@ -262,6 +263,95 @@ class NativeIcebergBatchSqlTest {
   }
 
   @Test
+  void nestedHashJoinSpillsBetweenNativeIcebergReadersAndWriter() throws Exception {
+    int files = 4;
+    int rowsPerFile = Integer.getInteger("sf.iceberg.join.rowsPerFile", 24_000);
+    int rows = Math.multiplyExact(files, rowsPerFile);
+    int memoryMiB = Integer.getInteger("sf.iceberg.join.memoryMiB", 96);
+    String padding = "-é🐍".repeat(292);
+    var sql =
+        environment(
+            Map.of(
+                "parallelism.default", "4",
+                "table.exec.resource.default-parallelism", "4",
+                "execution.batch.adaptive.auto-parallelism.enabled", "false",
+                "table.optimizer.join.broadcast-threshold", "-1",
+                "table.exec.disabled-operators", "NestedLoopJoin,SortMergeJoin",
+                "streamfusion.transpose.batchRows", "1024",
+                "taskmanager.memory.task.off-heap.size", memoryMiB + "m"));
+    String nested =
+        "profile ROW<n INT, label STRING, ts TIMESTAMP(6)>, items ARRAY<ROW<name STRING,"
+            + " vals ARRAY<DOUBLE>>>, attrs MAP<STRING, ROW<n INT>>";
+    for (String name : java.util.List.of("left_input", "right_input")) {
+      sql.executeSql("CREATE TABLE ice.db." + name + " (id INT, " + nested + ")");
+    }
+    sql.executeSql(
+        "CREATE TABLE ice.db.output (id INT, "
+            + nested
+            + ", "
+            + nested
+                .replace("profile", "right_profile")
+                .replace("items", "right_items")
+                .replace("attrs", "right_attrs")
+            + ", shard INT) PARTITIONED BY (shard)"
+            + " WITH ('write-parallelism'='4', 'write.distribution-mode'='hash')");
+    try (var catalog = catalog()) {
+      var left = table(catalog, "left_input");
+      var right = table(catalog, "right_input");
+      for (int i = 0; i < files; i++) {
+        int start = i * rowsPerFile;
+        NativeIcebergNestedSqlTest.append(left, start, start + rowsPerFile, padding);
+        NativeIcebergNestedSqlTest.append(right, start, start + rowsPerFile, padding);
+      }
+      String insert =
+          "INSERT INTO ice.db.output SELECT l.id,l.profile,l.items,l.attrs,"
+              + " r.profile,r.items,r.attrs,MOD(l.id,4) FROM ice.db.left_input"
+              + " /*+ OPTIONS('source.parallelism'='4') */ l JOIN ice.db.right_input"
+              + " /*+ OPTIONS('source.parallelism'='4') */ r ON l.id=r.id";
+      var plan = sql.explainSql(insert);
+      assertTrue(plan.contains("NativeJoin"), plan);
+      assertTrue(
+          plan.lines().filter(line -> line.contains("NativeConnectorSource")).count() >= 2, plan);
+      assertTrue(plan.contains("NativeConnectorSink"), plan);
+      long start = System.nanoTime();
+      sql.executeSql(insert).await(300, TimeUnit.SECONDS);
+      long elapsed = System.nanoTime() - start;
+      assertTrue(IcebergNativeMetrics.count("nativeParquetTasks") >= 2 * files);
+      assertEquals(0, IcebergNativeMetrics.count("stockFallbackTasks"));
+      long spills = IcebergNativeMetrics.count("batchJoinSpills");
+      long spilledBytes = IcebergNativeMetrics.count("batchJoinSpilledBytes");
+      assertTrue(spills > 0 && spilledBytes > 0, "hash join must spill with the configured budget");
+      var output = table(catalog, "output");
+      NativeIcebergSqlTest.assertNativeDataFiles(output, plan);
+      var seen = new BitSet(rows);
+      var shards = new java.util.HashSet<Integer>();
+      try (var records = IcebergGenerics.read(output).build()) {
+        for (var record : records) {
+          int id = (Integer) record.getField("id");
+          assertTrue(id >= 0 && id < rows && !seen.get(id), "unexpected committed id " + id);
+          seen.set(id);
+          int shard = (Integer) record.getField("shard");
+          assertEquals(id % files, shard);
+          shards.add(shard);
+          var expected = NativeIcebergNestedSqlTest.nestedRow(left.schema(), id, padding);
+          for (String field : java.util.List.of("profile", "items", "attrs")) {
+            assertEquals(expected.getField(field), record.getField(field), field);
+            assertEquals(expected.getField(field), record.getField("right_" + field), field);
+          }
+        }
+      }
+      assertEquals(rows, seen.cardinality());
+      assertEquals(java.util.Set.of(0, 1, 2, 3), shards);
+      System.out.printf(
+          "ICEBERG_NESTED_JOIN rows_per_side=%d off_heap_mib=%d spills=%d spilled_bytes=%d"
+              + " elapsed_nanos=%d%n",
+          rows, memoryMiB, spills, spilledBytes, elapsed);
+    }
+    assertEquals("", NativeIceberg.liveNativeHandles());
+    assertEquals(0, tech.streamfusion.operator.TaskOffHeapMemory.reservedBytes());
+  }
+
+  @Test
   void countWithZeroColumnProjectionUsesNativeReaderAndPushedLimitStaysStock() throws Exception {
     var sql = environment();
     sql.executeSql(
@@ -337,6 +427,10 @@ class NativeIcebergBatchSqlTest {
   }
 
   private TableEnvironment environment() throws Exception {
+    return environment(Map.of());
+  }
+
+  private TableEnvironment environment(Map<String, String> overrides) throws Exception {
     IcebergNativeMetrics.reset();
     var config =
         Configuration.fromMap(
@@ -346,6 +440,7 @@ class NativeIcebergBatchSqlTest {
                 "taskmanager.memory.task.off-heap.size", "256 mb",
                 "metrics.reporters", "iceberg",
                 "metrics.reporter.iceberg.factory.class", IcebergNativeMetrics.class.getName()));
+    config.addAll(Configuration.fromMap(overrides));
     var sql = NativePlannerTestEnvironment.createBatch(config);
     sql.executeSql(
         "CREATE CATALOG ice WITH ('type'='iceberg', 'catalog-type'='hadoop', 'warehouse'='"

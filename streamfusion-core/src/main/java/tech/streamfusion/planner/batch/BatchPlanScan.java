@@ -8,7 +8,6 @@ import org.apache.calcite.rel.RelDistribution;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Sort;
-import org.apache.calcite.rel.type.RelDataType;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalCalc;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalExchange;
 import org.apache.flink.table.planner.plan.nodes.physical.batch.BatchPhysicalExpand;
@@ -142,7 +141,25 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
       Map<RelNode, BatchAggregateSpec> aggregates,
       boolean retained) {
     operators.add(node.getClass().getSimpleName());
-    if (!scalarRow(node.getRowType())) return decline("batch: non-scalar Arrow boundary");
+    if (!tech.streamfusion.planner.common.ArrowBoundaryTypes.convertibleRow(node.getRowType()))
+      return decline("batch: unsupported Arrow boundary");
+    if ((node instanceof BatchPhysicalRank
+            || node instanceof BatchPhysicalOverAggregate
+            || node instanceof BatchPhysicalExpand)
+        && node.getRowType().getFieldList().stream()
+            .anyMatch(
+                field -> {
+                  switch (field.getType().getSqlTypeName()) {
+                    case ARRAY:
+                    case MAP:
+                    case MULTISET:
+                    case ROW:
+                      return true;
+                    default:
+                      return false;
+                  }
+                }))
+      return decline("batch: nested payload is unverified for " + node.getRelTypeName());
     if (node.getInputs().isEmpty()) {
       return HostStringInputs.guaranteesUtf8(node)
           || nativeSources.test(node)
@@ -523,25 +540,5 @@ public class BatchPlanScan implements FlinkOptimizeProgram<BatchOptimizeContext>
         + substitutions
         + " native substitutions; fallback reasons="
         + reasons;
-  }
-
-  private static boolean scalarRow(RelDataType type) {
-    return tech.streamfusion.planner.common.ArrowBoundaryTypes.convertibleRow(type)
-        && type.getFieldList().stream()
-            .allMatch(
-                field -> {
-                  switch (field.getType().getSqlTypeName()) {
-                    case ARRAY:
-                    case MAP:
-                    case MULTISET:
-                    case ROW:
-                    case STRUCTURED:
-                    case ANY:
-                    case OTHER:
-                      return false;
-                    default:
-                      return true;
-                  }
-                });
   }
 }

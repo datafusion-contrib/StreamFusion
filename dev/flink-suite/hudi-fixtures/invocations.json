@@ -712,13 +712,15 @@
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestBlobWrite]/[test-template:testWriteAndReadOutOfLineBlob(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestBlobWrite]/[test-template:testWriteAndReadOutOfLineBlob(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestDynamicBucketStreamWrite]/[test-template:testBucketScalesUpWithContinuousWrites(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
@@ -898,7 +900,8 @@
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testParquetNestedRowExceedingReadBatch()]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[method:testPredicateForBaseFileWithMor()]": {
@@ -1723,91 +1726,106 @@
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetArrayMapOfRowTypes(java.lang.String)]/[test-template-invocation:#1]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetArrayMapOfRowTypes(java.lang.String)]/[test-template-invocation:#2]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetArrayMapOfRowTypes(java.lang.String)]/[test-template-invocation:#3]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetComplexNestedRowTypes(java.lang.String)]/[test-template-invocation:#1]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetComplexNestedRowTypes(java.lang.String)]/[test-template-invocation:#2]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetComplexNestedRowTypes(java.lang.String)]/[test-template-invocation:#3]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetComplexTypes(java.lang.String)]/[test-template-invocation:#1]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetComplexTypes(java.lang.String)]/[test-template-invocation:#2]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetComplexTypes(java.lang.String)]/[test-template-invocation:#3]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetDeeplyNestedRepeatedTypes(java.lang.String)]/[test-template-invocation:#1]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetDeeplyNestedRepeatedTypes(java.lang.String)]/[test-template-invocation:#2]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetDeeplyNestedRepeatedTypes(java.lang.String)]/[test-template-invocation:#3]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetNullChildColumnsRowTypes(java.lang.String)]/[test-template-invocation:#1]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetNullChildColumnsRowTypes(java.lang.String)]/[test-template-invocation:#2]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testParquetNullChildColumnsRowTypes(java.lang.String)]/[test-template-invocation:#3]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch Calc: collection representation is unsupported",
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestHoodieDataSource]/[test-template:testReadChangelogIncremental(org.apache.hudi.common.model.HoodieTableType, boolean)]/[test-template-invocation:#1]": {
@@ -2948,13 +2966,13 @@
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestVectorCrossEngineCompatibility]/[test-template:testValidationVectorColumnsFromCOWTable(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#1]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.ITTestVectorCrossEngineCompatibility]/[test-template:testValidationVectorColumnsFromCOWTable(org.apache.hudi.common.model.HoodieTableType)]/[test-template-invocation:#2]": {
       "native_work": {},
       "fallback_reasons": [
-        "batch: non-scalar Arrow boundary"
+        "batch: row source STRING has no verified UTF-8 or byte representation"
       ]
     },
     "[engine:junit-jupiter]/[class:org.apache.hudi.table.TestHoodieFileGroupReaderOnFlink]/[method:getRecordKeyFromMetadataFields()]": {
