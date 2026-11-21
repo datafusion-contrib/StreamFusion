@@ -15,6 +15,9 @@ on:
         description: "Resume publication from an existing signed tag on main's history"
         default: false
         type: boolean
+      native_run:
+        description: "Optional previous canonical release run with both native payloads"
+        type: string
 
 permissions:
   contents: read
@@ -30,12 +33,14 @@ jobs:
     runs-on: ubuntu-24.04
     environment: release
     permissions:
+      actions: read
       contents: write
     outputs:
       version: ${{ steps.source.outputs.version }}
       dry_run: ${{ steps.source.outputs.dry_run }}
       tag: ${{ steps.source.outputs.tag }}
       commit: ${{ steps.source.outputs.commit }}
+      native_artifacts: ${{ steps.native.outputs.native_artifacts }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -134,9 +139,33 @@ jobs:
             git push origin "refs/tags/$RELEASE_TAG"
           fi
 
+      - uses: actions/checkout@v6
+        if: inputs.native_run
+        with:
+          ref: ${{ github.sha }}
+          path: release-tools
+          persist-credentials: false
+          sparse-checkout: dev/tools/checks/release_publish.py
+          sparse-checkout-cone-mode: false
+
+      - id: native
+        if: inputs.native_run
+        name: Verify the source of existing native payloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN: ${{ inputs.native_run }}
+          RESUME: ${{ inputs.resume || false }}
+          RELEASE_COMMIT: ${{ steps.source.outputs.commit }}
+          VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          test "$RESUME" = true
+          python3 release-tools/dev/tools/checks/release_publish.py validate-native-run \
+            "$GITHUB_REPOSITORY" "$NATIVE_RUN" "$RELEASE_COMMIT" "$VERSION"
+
   linux-native:
     name: Build native payload (Linux x86_64)
     needs: prepare
+    if: ${{ !inputs.native_run }}
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     steps:
@@ -178,6 +207,7 @@ jobs:
   darwin-native:
     name: Build native payload (macOS Apple Silicon)
     needs: prepare
+    if: ${{ !inputs.native_run }}
     runs-on: macos-15
     timeout-minutes: 180
     steps:
@@ -214,15 +244,28 @@ jobs:
   publish:
     name: Stage Maven artifacts and GitHub release
     needs: [prepare, linux-native, darwin-native]
+    if: >-
+      ${{ !cancelled() && needs.prepare.result == 'success'
+        && ((needs.linux-native.result == 'success' && needs.darwin-native.result == 'success')
+          || needs.prepare.outputs.native_artifacts) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     environment: release
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare.outputs.commit }}
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: release-tools
+          persist-credentials: false
+          sparse-checkout: dev/tools/checks/release_publish.py
+          sparse-checkout-cone-mode: false
 
       - name: Free disk space
         run: |
@@ -230,10 +273,20 @@ jobs:
           df -h /
 
       - uses: actions/download-artifact@v4
+        if: ${{ !needs.prepare.outputs.native_artifacts }}
         with:
           pattern: native-*-${{ needs.prepare.outputs.version }}
           path: native/target/universal
           merge-multiple: true
+
+      - name: Download and verify existing native payloads
+        if: needs.prepare.outputs.native_artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_ARTIFACTS: ${{ needs.prepare.outputs.native_artifacts }}
+        run: |
+          python3 release-tools/dev/tools/checks/release_publish.py download-native \
+            "$GITHUB_REPOSITORY" "$NATIVE_ARTIFACTS" native/target/universal
 
       - name: Configure Java, Central credentials, and signing
         uses: actions/setup-java@v4
@@ -264,10 +317,16 @@ jobs:
           echo "$RUNNER_TEMP/apache-maven-$MAVEN_VERSION/bin" >> "$GITHUB_PATH"
 
       - name: Verify the universal deployment bundle
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           mvn --version
+          python3 release-tools/dev/tools/checks/release_publish.py attach-runtime-documentation \
+            "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$RUNNER_TEMP/runtime-release-docs"
           mvn -B -ntp clean package -Pdist,universal,release,delta,paimon,iceberg,doris -Dgpg.skip=true -DskipTests
           bin/check-artifacts.sh
+          python3 release-tools/dev/tools/checks/release_publish.py check-attachments "$VERSION"
 
       - id: central-status
         name: Check whether this immutable coordinate already exists
