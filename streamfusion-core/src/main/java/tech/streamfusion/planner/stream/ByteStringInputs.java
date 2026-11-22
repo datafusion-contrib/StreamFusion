@@ -7,8 +7,10 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalSink;
+import tech.streamfusion.operator.NativeUdf;
 import tech.streamfusion.planner.ColumnarInput;
 import tech.streamfusion.planner.HostStringInputs;
+import tech.streamfusion.planner.common.CertifiedOp;
 import tech.streamfusion.planner.common.ExpressionKind;
 import tech.streamfusion.planner.common.ScalarOp;
 
@@ -41,7 +43,7 @@ final class ByteStringInputs {
     var used = new BitSet();
     if (calc.byteStringOutputs(columns, used) == null || used.isEmpty()) return root;
     input = input.withByteStringColumns(columns.stream().toArray());
-    if (calc.hasStringPassthrough() || calc.usesPairwiseStringComparison())
+    if (calc.hasStringPassthrough() || calc.requiresOriginalStringInputs())
       input = input.withStringCaches();
     return root.copy(root.getTraitSet(), List.of(input));
   }
@@ -64,6 +66,11 @@ final class ByteStringInputs {
 
   private static Prepared prepareTree(
       RelNode node, boolean preserveOutputCaches, boolean exitsToRows) {
+    return prepareTree(node, preserveOutputCaches, exitsToRows, false);
+  }
+
+  private static Prepared prepareTree(
+      RelNode node, boolean preserveOutputCaches, boolean exitsToRows, boolean groupingExchange) {
     if (node instanceof StreamPhysicalRowDataToArrow) {
       var transpose = (StreamPhysicalRowDataToArrow) node;
       if (!transpose.needsUtf8Input() || HostStringInputs.guaranteesUtf8(transpose.getInput()))
@@ -78,15 +85,17 @@ final class ByteStringInputs {
     }
 
     boolean union = node instanceof StreamPhysicalNativeUnion;
+    boolean group = node instanceof StreamPhysicalNativeColumnarGroupAggregate;
+    boolean exchange = groupingExchange && node instanceof StreamPhysicalNativeColumnarExchange;
     boolean forwardsSchema =
-        union || node instanceof StreamPhysicalNativeWatermarkAssigner
+        union || exchange || node instanceof StreamPhysicalNativeWatermarkAssigner
             || node instanceof StreamPhysicalNativeMiniBatchAssigner
             || node instanceof StreamPhysicalNativeDropUpdateBefore;
     boolean preserveInputCaches =
         node instanceof StreamPhysicalArrowToRowData
             || (forwardsSchema && preserveOutputCaches)
             || node instanceof StreamPhysicalNativeCalc
-                && (((StreamPhysicalNativeCalc) node).usesPairwiseStringComparison()
+                && (((StreamPhysicalNativeCalc) node).requiresOriginalStringInputs()
                     || preserveOutputCaches && ((StreamPhysicalNativeCalc) node).hasStringPassthrough())
             || node instanceof StreamPhysicalNativeFilter && preserveOutputCaches
                 && ((StreamPhysicalNativeFilter) node).hasStringPassthrough();
@@ -96,7 +105,7 @@ final class ByteStringInputs {
     boolean represented = false;
     boolean inputExitsToRows = node instanceof StreamPhysicalArrowToRowData;
     for (RelNode input : node.getInputs()) {
-      Prepared prepared = prepareTree(input, preserveInputCaches, inputExitsToRows);
+      Prepared prepared = prepareTree(input, preserveInputCaches, inputExitsToRows, group);
       if (prepared == null) return null;
       inputs.add(prepared.node);
       changed |= prepared.node != input;
@@ -140,7 +149,13 @@ final class ByteStringInputs {
               originalText.representedStrings, output, exitsToRows);
           return adaptive == null ? null : new Prepared(adaptive, output);
         }
+      } else if (group) {
+        if (prepared.representedStrings) return null;
+        output =
+            ((StreamPhysicalNativeColumnarGroupAggregate) node).byteKeyOutputs(prepared.byteStrings);
+        if (output == null) return null;
       } else if (forwardsSchema) {
+        if (exchange && prepared.representedStrings) return null;
         output = prepared.byteStrings;
         represented = prepared.representedStrings;
       } else {
@@ -177,6 +192,7 @@ final class ByteStringInputs {
       int[] kinds,
       int[] payload,
       int[] children,
+      long[] parameters,
       int[] projections,
       int condition,
       BitSet input,
@@ -184,21 +200,23 @@ final class ByteStringInputs {
       BitSet used) {
     var byteStrings = new BitSet();
     for (int i = 0; i < projections.length; i++) {
-      Expression expression = visit(projections[i], kinds, payload, children, input, used);
+      Expression expression = visit(projections[i], kinds, payload, children, parameters, input, used);
       if (expression == null) return null;
       if (expression.byteString) {
         if (!SqlTypeFamily.CHARACTER.contains(output.getFieldList().get(i).getType())) return null;
         byteStrings.set(i);
       }
     }
-    if (condition >= 0 && !supportsPredicate(condition, kinds, payload, children, input, used))
+    if (condition >= 0
+        && !supportsPredicate(condition, kinds, payload, children, parameters, input, used))
       return null;
     return byteStrings;
   }
 
   static boolean supportsPredicate(
-      int condition, int[] kinds, int[] payload, int[] children, BitSet input, BitSet used) {
-    Expression predicate = visit(condition, kinds, payload, children, input, used);
+      int condition, int[] kinds, int[] payload, int[] children, long[] parameters,
+      BitSet input, BitSet used) {
+    Expression predicate = visit(condition, kinds, payload, children, parameters, input, used);
     return predicate != null && !predicate.byteString;
   }
 
@@ -247,14 +265,22 @@ final class ByteStringInputs {
   }
 
   private static Expression visit(
-      int node, int[] kinds, int[] payload, int[] children, BitSet input, BitSet used) {
+      int node, int[] kinds, int[] payload, int[] children, long[] parameters, BitSet input,
+      BitSet used) {
     ExpressionKind kind = ExpressionKind.fromCode(kinds[node]);
     if (kind == ExpressionKind.INPUT_REF) {
       boolean bytes = input.get(payload[node]);
       if (bytes) used.set(payload[node]);
       return new Expression(node + 1, bytes);
     }
+    boolean byteTrim = kind == ExpressionKind.CERTIFIED_BUILTIN
+        && parameters[payload[node] + 1] == NativeUdf.TYPE_BINARY
+        && parameters[payload[node] + 2] >= CertifiedOp.TRIM
+        && parameters[payload[node] + 2] <= CertifiedOp.RTRIM;
     switch (kind) {
+      case CERTIFIED_BUILTIN:
+        if (!byteTrim) return null;
+        break;
       case LIT_LONG:
       case LIT_DOUBLE:
       case LIT_STRING:
@@ -292,16 +318,17 @@ final class ByteStringInputs {
     int next = node + 1;
     boolean hasByteInput = false;
     for (int i = 0; i < children[node]; i++) {
-      Expression child = visit(next, kinds, payload, children, input, used);
+      Expression child = visit(next, kinds, payload, children, parameters, input, used);
       if (child == null) return null;
       if (child.byteString
+          && !byteTrim
           && kind != ExpressionKind.STRING_COMPARISON
           && !acceptsByteStringInput(operation)) return null;
       hasByteInput |= child.byteString;
       next = child.next;
     }
     boolean byteResult =
-        operation == ScalarOp.FROM_BASE64
+        byteTrim || operation == ScalarOp.FROM_BASE64
             || (hasByteInput && (operation == ScalarOp.CONCAT || operation == ScalarOp.CONCAT_WS));
     return new Expression(next, byteResult);
   }

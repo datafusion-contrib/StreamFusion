@@ -2710,6 +2710,14 @@ stops after two profiling/optimization passes; slower results use the accepted c
 
 ## Character grouping keys
 
+A single-phase streaming `COUNT(*)` can group byte-backed logical STRING keys, including
+`GROUP BY CONCAT(s, '!')` when `s` can contain malformed UTF-8. The native exchange and
+aggregate hash the existing Flink BinaryRow key bytes. The aggregate emits the key as Arrow
+Binary tagged as logical STRING, so a byte-capable Calc or row sink receives the original bytes.
+The scope is limited to raw bytes in grouping keys and `COUNT(*)` aggregates. The
+[complete-job measurement](../benchmarks/scalar-functions-strings.md#complete-byte-backed-string-jobs)
+retains the exchange and both perimeter transposes.
+
 Verified COLLECT and, on Flink 2.2, ARRAY_AGG admit STRING/VARCHAR and CHAR grouping keys.
 The character-field check applies to aggregate results rather than serialized grouping fields;
 character collection values use the [verified extension](#string-collection-elements);

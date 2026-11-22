@@ -192,9 +192,9 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
   }
 
   BitSet byteStringOutputs(BitSet input, BitSet used) {
-    if (preservesCollections() || udfBinding != null && !udfBinding.isEmpty()) return null;
+    if (preservesCollections()) return null;
     return ByteStringInputs.outputs(
-        kinds, payload, childCounts, projectionRoots, conditionRoot, input, getRowType(), used);
+        kinds, payload, childCounts, longs, projectionRoots, conditionRoot, input, getRowType(), used);
   }
 
   StreamPhysicalNativeCalc withAdaptiveText(
@@ -237,8 +237,10 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
         }
       }
     }
-    // A volatile call site such as RAND(seed) must retain one evaluator across every batch.
+    // Other expressions can populate a trim set's Java cache through a shared input reference.
+    // Keep that evaluation in one Flink program when the byte-compatible Calc was declined.
     boolean generatedOnly = ExpressionPlanning.isRowCalc(kinds)
+        || ExpressionPlanning.containsRuntimeTrim(sourceProgram)
         || sourceProgram.getExprList().stream()
             .anyMatch(expression -> !RexUtil.isDeterministic(expression));
     return new StreamPhysicalNativeCalc(

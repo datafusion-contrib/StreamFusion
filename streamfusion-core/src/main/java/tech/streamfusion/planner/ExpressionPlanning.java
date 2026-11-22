@@ -67,6 +67,22 @@ public final class ExpressionPlanning {
     return RexExpression.encodeHostCalc(calc, "unverified UTF-8 text input", true);
   }
 
+  public static boolean containsRuntimeTrim(RexProgram program) {
+    return program.getProjectList().stream().map(program::expandLocalRef)
+            .anyMatch(ExpressionPlanning::containsRuntimeTrim)
+        || program.getCondition() != null
+            && containsRuntimeTrim(program.expandLocalRef(program.getCondition()));
+  }
+
+  private static boolean containsRuntimeTrim(RexNode expression) {
+    if (expression instanceof RexFieldAccess)
+      return containsRuntimeTrim(((RexFieldAccess) expression).getReferenceExpr());
+    if (!(expression instanceof RexCall)) return false;
+    var call = (RexCall) expression;
+    return RexExpression.isDynamicTrim(call)
+        || call.getOperands().stream().anyMatch(ExpressionPlanning::containsRuntimeTrim);
+  }
+
   public static boolean containsUserFunction(RexNode expression) {
     if (expression instanceof RexFieldAccess) {
       return containsUserFunction(((RexFieldAccess) expression).getReferenceExpr());

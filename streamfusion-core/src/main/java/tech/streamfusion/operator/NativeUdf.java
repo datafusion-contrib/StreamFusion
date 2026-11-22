@@ -1067,7 +1067,11 @@ public final class NativeUdf {
                     : value.toString().getBytes(StandardCharsets.UTF_8));
         break;
       case TYPE_BINARY:
-        ((VarBinaryVector) vector).setSafe(row, (byte[]) value);
+        ((VarBinaryVector) vector).setSafe(
+            row,
+            value instanceof org.apache.flink.table.data.StringData
+                ? ((org.apache.flink.table.data.StringData) value).toBytes()
+                : (byte[]) value);
         break;
       case TYPE_LONG:
       case TYPE_INTERVAL_MILLIS:
