@@ -3289,6 +3289,56 @@ mod certified_builtin_tests {
     }
 
     #[test]
+    fn byte_backed_runtime_trim_keeps_malformed_bytes_without_a_jvm() {
+        use arrow::array::BinaryArray;
+        use streamfusion_bridge::string_cache::{string_cache_array, string_cache_field};
+        let cache = string_cache_array([None, Some(&[32, 97, 98][..]), None]);
+        let input = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("set", DataType::Binary, true),
+                Field::new("source", DataType::Binary, true),
+                string_cache_field(0, cache.data_type().clone()),
+            ])),
+            vec![
+                Arc::new(BinaryArray::from(vec![
+                    &b" ab"[..],
+                    &b" ab"[..],
+                    &b" ab"[..],
+                ])),
+                Arc::new(BinaryArray::from(vec![
+                    Some(&b" \xff "[..]),
+                    Some(&b" abXYZba "[..]),
+                    None,
+                ])),
+                cache,
+            ],
+        )
+        .unwrap();
+        let mut calc = CalcExpression {
+            kinds: vec![44, 0, 0],
+            payload: vec![0, 0, 1],
+            child_counts: vec![2, 0, 0],
+            longs: vec![999, 14, certified_op::TRIM],
+            doubles: vec![],
+            strings: vec![],
+            projection_roots: vec![0],
+            condition_root: -1,
+            output_names: vec!["v".into()],
+            compiled: None,
+        };
+        let result = calc.evaluate(input.clone());
+        assert_eq!(
+            result.column(0).as_ref(),
+            &BinaryArray::from(vec![Some(&b"\xff"[..]), Some(&b"XYZ"[..]), None]),
+        );
+        assert_eq!(
+            result.schema_ref().field(0).metadata()["streamfusion.logical_string"],
+            "1"
+        );
+        assert_eq!(calc.evaluate(input.slice(0, 0)).num_rows(), 0);
+    }
+
+    #[test]
     fn string_cache_certificate_survives_positional_schema_names() {
         let cache = streamfusion_bridge::string_cache::string_cache_array([Some(&[65_u16][..])]);
         let schema = Arc::new(Schema::new(vec![

@@ -100,8 +100,7 @@ class FlinkByteStringConcatSqlHarnessTest {
   @ValueSource(
       strings = {
         "SELECT CONCAT(s, '!') FROM src WHERE id = 0 "
-            + "UNION ALL SELECT CAST('ok' AS STRING) FROM (VALUES (0))",
-        "SELECT CONCAT(s, '!'), COUNT(*) FROM src GROUP BY CONCAT(s, '!')"
+            + "UNION ALL SELECT CAST('ok' AS STRING) FROM (VALUES (0))"
       })
   void unqualifiedConsumersKeepTheStockPlan(String sql) throws Exception {
     try (var metrics = new RecoveryExecutionMetrics()) {
@@ -134,6 +133,22 @@ class FlinkByteStringConcatSqlHarnessTest {
   }
 
   @ParameterizedTest
+  @ValueSource(strings = {"id % 20 = 0", "id % 10 IN (4, 6, 8)"})
+  void runtimeTrimSetsUseByteBatches(String predicate) throws Exception {
+    String sql = "SELECT TRIM(BOTH delim FROM s) AS v FROM src WHERE " + predicate;
+    assertEquals(run(sql, false), run(sql, Route.BYTE_TRIM, Result.STRING));
+  }
+
+  @Test
+  void composedTrimKeepsOneEvaluatorForTheSharedStringCache() throws Exception {
+    String sql =
+        "SELECT LOWER(delim) AS original, TRIM(BOTH delim FROM t) AS v FROM src "
+            + "WHERE id % 20 = 8 AND t IS NOT NULL";
+    assertEquals(run(sql, Route.HOST, Result.PASSTHROUGH),
+        run(sql, Route.EXACT, Result.PASSTHROUGH));
+  }
+
+  @ParameterizedTest
   @ValueSource(strings = {"'a'", "''", "delim"})
   void mixedSplitPreservesNestedBytesAndJavaStrings(String separator) throws Exception {
     tech.streamfusion.compat.FlinkTestCapabilities.requireSqlFunction("SPLIT");
@@ -152,6 +167,12 @@ class FlinkByteStringConcatSqlHarnessTest {
   void truncatedTextRetainsFlinkResultsOrFailure(String expression) {
     String sql = "SELECT " + expression + " AS v FROM src WHERE id < 3";
     assertEquals(outcome(sql, Route.HOST), outcome(sql, Route.ADAPTIVE));
+  }
+
+  @Test
+  void truncatedRuntimeTrimRetainsTheFlinkFailure() {
+    String sql = "SELECT TRIM(BOTH delim FROM s) AS v FROM src WHERE id = 2";
+    assertEquals(outcome(sql, Route.HOST), outcome(sql, Route.BYTE_TRIM));
   }
 
   private static Object outcome(String sql, Route route) {
@@ -176,12 +197,68 @@ class FlinkByteStringConcatSqlHarnessTest {
     assertEquals(expected, actual);
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void malformedConcatKeysKeepDistinctGroups(boolean miniBatch) throws Exception {
+    String sql =
+        "SELECT TO_BASE64(k) AS k, n FROM ("
+            + "SELECT CONCAT(s, '!') AS k, COUNT(*) AS n FROM src "
+            + "GROUP BY CONCAT(s, '!'))";
+    var expected = groupedCounts(sql, false, miniBatch);
+    assertTrue(expected.containsKey("/yE="), expected.toString());
+    assertTrue(expected.containsKey("QeQh"), expected.toString());
+    assertEquals(expected, groupedCounts(sql, true, miniBatch));
+  }
+
+  private static java.util.Map<String, Long> groupedCounts(
+      String sql, boolean accelerated, boolean miniBatch) throws Exception {
+    try (var metrics = new RecoveryExecutionMetrics()) {
+      var table = source(metrics, false, 2);
+      table.getConfig().set("table.optimizer.agg-phase-strategy", "ONE_PHASE");
+      if (miniBatch) {
+        table.getConfig().set("table.exec.mini-batch.enabled", "true");
+        table.getConfig().set("table.exec.mini-batch.allow-latency", "1 h");
+        table.getConfig().set("table.exec.mini-batch.size", "256");
+      }
+      var scan = accelerated ? NativePlanner.install(table) : null;
+      if (accelerated) {
+        String plan = table.explainSql(sql);
+        assertTrue(plan.contains("byteStrings="), () -> plan + scan.fallbackReasons());
+        assertTrue(plan.contains("NativeColumnarGroupAggregate"), plan);
+        assertTrue(plan.contains("NativeColumnarExchange"), plan);
+      }
+      var counts = new java.util.HashMap<String, Long>();
+      try (var rows = table.executeSql(sql).collect()) {
+        while (rows.hasNext()) {
+          var row = rows.next();
+          var key = (String) row.getField(0);
+          switch (row.getKind()) {
+            case INSERT:
+            case UPDATE_AFTER:
+              counts.put(key, (Long) row.getField(1));
+              break;
+            case DELETE:
+              counts.remove(key);
+              break;
+            case UPDATE_BEFORE:
+              break;
+          }
+        }
+      }
+      if (accelerated) {
+        assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeColumnarGroupAggregate");
+      }
+      return counts;
+    }
+  }
+
   @Test
-  void callbackReturningInternalStringUsesStock() throws Exception {
+  void callbackReturningInternalStringFeedsNativeBase64() throws Exception {
     String sql = "SELECT TO_BASE64(emit_bytes(id)) AS v FROM src WHERE id < 2";
     List<String> expected = run(sql, false);
     assertEquals(List.of("L3dBPQ==", "L3dFPQ=="), expected);
-    assertEquals(expected, run(sql, Route.FALLBACK, Result.STRING));
+    assertEquals(expected, run(sql, Route.JVM_CALLBACK, Result.STRING));
   }
 
   @FunctionHint(
@@ -197,7 +274,8 @@ class FlinkByteStringConcatSqlHarnessTest {
     NATIVE,
     ADAPTIVE,
     EXACT,
-    FALLBACK
+    BYTE_TRIM,
+    JVM_CALLBACK
   }
 
   private enum Result {
@@ -226,19 +304,22 @@ class FlinkByteStringConcatSqlHarnessTest {
       var table = source(metrics, timed);
       table.createTemporarySystemFunction("emit_bytes", EmitBytes.class);
       var scan = route == Route.HOST ? null : NativePlanner.install(table);
-      if (route == Route.NATIVE || route == Route.ADAPTIVE || route == Route.EXACT) {
+      if (route == Route.NATIVE || route == Route.ADAPTIVE || route == Route.EXACT
+          || route == Route.BYTE_TRIM) {
         String plan = table.explainSql(sql);
         assertTrue(plan.contains("byteStrings="), () -> plan + scan.fallbackReasons());
         assertTrue(plan.contains(nativeOperator), plan);
         assertTrue(plan.contains("RowDataToArrow"), plan);
         if (route == Route.ADAPTIVE) assertTrue(plan.contains("onDemandUtf8=[true]"), plan);
         if (route == Route.EXACT) assertTrue(plan.contains("byteBackedFlinkEval=[true]"), plan);
+        if (route == Route.BYTE_TRIM) assertFalse(plan.contains("onDemandUtf8"), plan);
         if (timed) assertTrue(plan.contains("NativeWatermarkAssigner"), plan);
         if (sql.contains("UNION ALL")) assertTrue(plan.contains("NativeUnion"), plan);
-      } else if (route == Route.FALLBACK) {
+      } else if (route == Route.JVM_CALLBACK) {
         String plan = table.explainSql(sql);
-        assertFalse(plan.contains("RowDataToArrow"), plan);
-        assertFalse(scan.fallbackReasons().isEmpty(), plan);
+        assertTrue(plan.contains(nativeOperator), () -> plan + scan.fallbackReasons());
+        assertTrue(plan.contains("nativeFunctions=[TO_BASE64]"), plan);
+        assertTrue(plan.contains("EMIT_BYTES"), plan);
       }
       var output =
           table.<RowData>toDataStream(
@@ -283,6 +364,9 @@ class FlinkByteStringConcatSqlHarnessTest {
         if (timed) {
           RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeWatermarkAssigner");
         }
+      } else if (route == Route.JVM_CALLBACK || route == Route.BYTE_TRIM) {
+        assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
+        RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), nativeOperator);
       } else if (route == Route.ADAPTIVE || route == Route.EXACT) {
         assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
         if (route == Route.ADAPTIVE) assertTrue(metrics.counterValue("validatedTextRows") > 0, sql);
@@ -301,7 +385,12 @@ class FlinkByteStringConcatSqlHarnessTest {
   }
 
   private static StreamTableEnvironment source(RecoveryExecutionMetrics metrics, boolean timed) {
-    var env = metrics.environment(new org.apache.flink.configuration.Configuration(), 1, 0);
+    return source(metrics, timed, 1);
+  }
+
+  private static StreamTableEnvironment source(
+      RecoveryExecutionMetrics metrics, boolean timed, int parallelism) {
+    var env = metrics.environment(new org.apache.flink.configuration.Configuration(), parallelism, 0);
     var table = StreamTableEnvironment.create(env);
     var fields = new ArrayList<>(
         List.of(FIELD("id", INT()), FIELD("s", STRING()), FIELD("t", STRING()),
@@ -316,7 +405,10 @@ class FlinkByteStringConcatSqlHarnessTest {
       row.setField(1, value == null ? null : BinaryStringData.fromBytes(value));
       row.setField(2, i % 7 == 0 ? null : BinaryStringData.fromBytes(new byte[] {(byte) 0xa9}));
       row.setField(3, BinaryStringData.fromBytes(new byte[] {(byte) 0xff}));
-      row.setField(4, BinaryStringData.fromBytes(i % 2 == 0 ? new byte[] {'a'} : new byte[0]));
+      byte[] trimSet = i % 20 == 8 ? new byte[] {' ', 'a', (byte) 0xc3, (byte) 0xa9}
+          : i % 4 == 0 ? new byte[] {' ', 'a'}
+              : i % 2 == 0 ? new byte[] {'a'} : new byte[0];
+      row.setField(4, BinaryStringData.fromBytes(trimSet));
       if (timed) row.setField(5, TimestampData.fromEpochMillis(1000L + i));
       rows.add(row);
     }

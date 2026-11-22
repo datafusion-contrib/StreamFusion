@@ -1,5 +1,5 @@
 use crate::expression_protocol::certified_op;
-use arrow::array::{Array, ArrayRef, StringArray, StringBuilder};
+use arrow::array::{Array, ArrayRef, BinaryArray, BinaryBuilder, StringArray, StringBuilder};
 use std::sync::Arc;
 use streamfusion_bridge::string_cache::JavaStringCacheColumn;
 
@@ -26,37 +26,119 @@ pub(super) fn evaluate(
             continue;
         }
         let set = set.value(row);
-        // Flink's empty-set outcome depends on BinaryStringData's decoded-cache state.
-        if set.is_empty() {
+        let cached = cache.as_ref().and_then(|cache| cache.value(row)).is_some();
+        // Flink's uncached empty set can fail when it checks the first byte.
+        if set.is_empty() && !cached {
             return None;
         }
-        // Without a decoded cache, Flink treats any set starting with space as just space.
-        if set.starts_with(' ')
-            && set.len() > 1
-            && cache.as_ref().and_then(|cache| cache.value(row)).is_none()
-        {
-            return None;
-        }
-        let mask = set
-            .bytes()
-            .fold(0_u128, |mask, byte| mask | (1_u128 << byte));
+        // An uncached set starting with a space uses Flink's space-only trim.
+        let mask = if set.starts_with(' ') && !cached {
+            1_u128 << b' '
+        } else {
+            set.bytes()
+                .fold(0_u128, |mask, byte| mask | (1_u128 << byte))
+        };
         let value = source.value(row);
-        let bytes = value.as_bytes();
-        let mut start = 0;
-        let mut end = bytes.len();
-        if operation != certified_op::RTRIM {
-            while start < end && mask & (1_u128 << bytes[start]) != 0 {
-                start += 1;
-            }
-        }
-        if operation != certified_op::LTRIM {
-            while end > start && mask & (1_u128 << bytes[end - 1]) != 0 {
-                end -= 1;
-            }
-        }
+        let (start, end) = trim_bounds(operation, value.as_bytes(), mask);
         output.append_value(&value[start..end]);
     }
     Some(Arc::new(output.finish()))
+}
+
+/// Space-only trim compares the literal space byte, even on malformed inputs. An ASCII
+/// set and source can also use byte membership. Everything else retains Flink traversal.
+pub(super) fn evaluate_bytes(
+    operation: i64,
+    arrays: &[ArrayRef],
+    caches: &[ArrayRef],
+) -> Option<ArrayRef> {
+    let [set, source] = arrays else { return None };
+    let set = Bytes::new(set)?;
+    let source = Bytes::new(source)?;
+    if set.len() != source.len() {
+        return None;
+    }
+    let cache = caches
+        .first()
+        .filter(|cache| cache.data_type() != &arrow::datatypes::DataType::Null)
+        .map(JavaStringCacheColumn::new);
+    let mut output = BinaryBuilder::with_capacity(source.len(), source.value_capacity());
+    for row in 0..source.len() {
+        let (Some(set), Some(source)) = (set.get(row), source.get(row)) else {
+            output.append_null();
+            continue;
+        };
+        let space_only = match cache.as_ref().and_then(|cache| cache.value(row)) {
+            Some(units) => units == [u16::from(b' ')],
+            None => *set.first()? == b' ',
+        };
+        let mask = if space_only {
+            1_u128 << b' '
+        } else if set.is_ascii() && source.is_ascii() {
+            set.iter()
+                .fold(0_u128, |mask, byte| mask | (1_u128 << byte))
+        } else {
+            return None;
+        };
+        let (start, end) = trim_bounds(operation, source, mask);
+        output.append_value(&source[start..end]);
+    }
+    Some(Arc::new(output.finish()))
+}
+
+fn trim_bounds(operation: i64, bytes: &[u8], mask: u128) -> (usize, usize) {
+    let contains = |byte: u8| byte < 128 && mask & (1_u128 << byte) != 0;
+    let mut start = 0;
+    let mut end = bytes.len();
+    if operation != certified_op::RTRIM {
+        while start < end && contains(bytes[start]) {
+            start += 1;
+        }
+    }
+    if operation != certified_op::LTRIM {
+        while end > start && contains(bytes[end - 1]) {
+            end -= 1;
+        }
+    }
+    (start, end)
+}
+
+enum Bytes<'a> {
+    Binary(&'a BinaryArray),
+    Utf8(&'a StringArray),
+}
+
+impl<'a> Bytes<'a> {
+    fn new(array: &'a ArrayRef) -> Option<Self> {
+        let array = array.as_any();
+        if let Some(binary) = array.downcast_ref::<BinaryArray>() {
+            Some(Self::Binary(binary))
+        } else {
+            array.downcast_ref::<StringArray>().map(Self::Utf8)
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Self::Binary(array) => array.len(),
+            Self::Utf8(array) => array.len(),
+        }
+    }
+
+    fn get(&self, row: usize) -> Option<&'a [u8]> {
+        match self {
+            Self::Binary(array) => (!array.is_null(row)).then(|| array.value(row)),
+            Self::Utf8(array) => (!array.is_null(row)).then(|| array.value(row).as_bytes()),
+        }
+    }
+
+    fn value_capacity(&self) -> usize {
+        let offsets = match self {
+            Self::Binary(array) => array.value_offsets(),
+            Self::Utf8(array) => array.value_offsets(),
+        };
+        (offsets[self.len()] - offsets[0]) as usize
+    }
 }
 
 #[cfg(test)]
@@ -143,10 +225,26 @@ mod tests {
     }
 
     #[test]
-    fn leading_space_sets_require_the_original_decoded_cache() {
+    fn cached_empty_set_leaves_the_source_unchanged() {
+        let set: ArrayRef = Arc::new(StringArray::from(vec![""]));
+        let source: ArrayRef = Arc::new(StringArray::from(vec!["abc"]));
+        let cache = string_cache_array([Some(&[][..])]);
+        assert_eq!(
+            certified(13, set, source, &[cache]).unwrap().as_ref(),
+            &StringArray::from(vec!["abc"])
+        );
+    }
+
+    #[test]
+    fn leading_space_sets_follow_the_original_decoded_cache() {
         let set: ArrayRef = Arc::new(StringArray::from(vec![" ab"]));
         let source: ArrayRef = Arc::new(StringArray::from(vec![" abXYZba "]));
-        assert!(certified(13, set.clone(), source.clone(), &[]).is_none());
+        assert_eq!(
+            certified(13, set.clone(), source.clone(), &[])
+                .unwrap()
+                .as_ref(),
+            &StringArray::from(vec!["abXYZba"])
+        );
         let cache = string_cache_array([Some(&[32_u16, 97, 98][..])]);
         assert_eq!(
             certified(13, set, source, &[cache]).unwrap().as_ref(),

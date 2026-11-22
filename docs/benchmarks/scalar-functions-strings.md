@@ -942,6 +942,49 @@ Add `flink-1.18` to the Maven profiles for the other supported line. Complete-jo
 trials and their engine order are retained in the JSON result record.
 
 
+### Uncached runtime trim sets
+
+On Apple M4 with Flink 2.2.1/JDK 17, the same release driver with `ascii 64 false 1024 128 0 all 8 9`
+uses binary-only rows and Arrow batches with no cached Java UTF-16. One of the four sets
+starts with a space and follows Flink's space-only rule. The candidate used an invalid
+JVM callback ID and matched the full reference output. Median [minimum-maximum] ns/row
+over nine trials after eight warmups was 217.65 [140.41-304.78] in stock Flink and
+23.61 [15.57-29.29] in the Rust Calc, a 9.2× prepared-kernel gain. The generated JVM
+callback control took 306.55 [195.77-394.72] ns/row. The previous StreamFusion plan
+used stock Flink for these inputs. The prepared test starts with validated Arrow text
+and excludes the adaptive input scan and perimeter conversions.
+
+### Complete byte-backed string jobs
+
+On Apple M4, Flink 2.2.1/JDK 17.0.17 and release Rust with mimalloc, the three jobs each
+process one million runtime rows at parallelism one with 4,096 keys, 64-byte payloads
+and NULL every eleventh row. Every 32nd key contains a full malformed UTF-8 sequence,
+and keys congruent to one modulo four have spaces to trim. Runs use a 2 GiB
+maximum JVM heap, two warmups and five measured trials in alternating engine order.
+The timer includes submission, execution, the rowwise source and blackhole sink, both
+perimeter transposes, JNI, and the exchange and state for grouping. The candidate
+requires positive native Calc work and positive native group aggregate work where used.
+The previous StreamFusion plan used stock Flink on all three inputs.
+
+| Job | Stock / previous seconds, median [range] | StreamFusion seconds, median [range] |
+| --- | ---: | ---: |
+| `GROUP BY CONCAT(s, '!')` with `COUNT(*)` | 0.449 [0.430-0.450] | 0.293 [0.287-0.299] |
+| `TRIM(BOTH chars FROM s)` with an uncached set starting with space | 0.357 [0.354-0.369] | 0.298 [0.287-0.300] |
+| `TO_BASE64(emit_bytes(id))` | 0.379 [0.370-0.383] | 0.288 [0.285-0.296] |
+
+The initial trim prototype split malformed and valid rows into separate ranges.
+In an earlier fixture with the same size and malformed-key distribution but without
+the padding spaces, it took 0.644 [0.627-0.658] seconds versus 0.351 [0.350-0.364]
+in Flink. The direct Binary trim handles the whole measured batch without splitting
+it. Other trim-set distributions can still use the batched JVM evaluator.
+Separate parity tests check raw bytes, exceptions and native execution.
+
+```sh
+SF_BENCHMARK=true mvn -pl streamfusion-runtime -am test -Pbench,benchmarks \
+  -Dtest=ByteBackedStringJobBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dsf.extraJvmArgs=-Xmx2g
+```
+
 ## Binary STARTSWITH {#binary-startswith}
 
 Released Flink 2.2.1, Oracle JDK 17.0.12 and a release/mimalloc engine are compared on an

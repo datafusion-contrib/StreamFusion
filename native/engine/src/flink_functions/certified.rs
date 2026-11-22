@@ -44,6 +44,11 @@ pub(crate) fn evaluate(
         };
         return super::split_index::integer_separator([input, separator, index], caches);
     }
+    if (certified_op::TRIM..=certified_op::RTRIM).contains(&operation)
+        && target == &DataType::Binary
+    {
+        return trim::evaluate_bytes(operation, arrays, caches);
+    }
     for (index, input) in arrays.iter().enumerate() {
         if let Some(strings) = input.as_any().downcast_ref::<StringArray>() {
             let cache = caches

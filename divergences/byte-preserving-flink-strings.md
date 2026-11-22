@@ -25,6 +25,15 @@ changing their Arrow type. Future verified text consumers can obtain validated b
 views, with cached validation tied to immutable values and their element boundaries. Java UTF-16
 caches must be preserved or discarded at the same observable boundaries as Flink.
 
+Single-phase streaming `COUNT(*)` now carries verified byte-backed keys through the native
+exchange and group store. It uses Flink's existing BinaryRow key encoding for partitioning and
+state. The emitted key retains the logical STRING tag on its Binary field. This differs from
+Comet's shuffle admission because the native hash sees the same bytes as Flink's partitioner.
+A certified runtime trim can consume and return Binary directly. Space-only trim preserves
+malformed bytes and other verified sets use ASCII byte membership. When a batch needs the
+generated Flink evaluator, its arguments retain the original bytes and Java cache. A direct raw
+`StringData` UDF result can feed the native `TO_BASE64` consumer as Arrow Binary.
+
 Comet delegates CONCAT_WS to DataFusion Spark's text implementation, with a wrapper for scalar
 broadcasting. StreamFusion retains its existing DataFusion path for valid Utf8 and uses a byte
 kernel when an operand is Binary. This preserves Flink's raw separators and values as well as its

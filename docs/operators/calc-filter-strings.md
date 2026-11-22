@@ -346,7 +346,9 @@ multiple batches, NULLs, embedded zeros, Unicode, nested CONCAT and all-filtered
 At an unverified row ingress, the planner tracks byte-backed STRING columns through compatible
 Calcs and native filters, watermark and mini-batch assigners, UPDATE_BEFORE filters, and UNION ALL
 when every branch has the same byte-backed column positions and no surviving passthrough can
-expose a Java cache across the union. A numeric filter can forward
+expose a Java cache across the union. A single-phase
+[COUNT(*) grouping](group-by.md#character-grouping-keys) can also consume byte-backed keys through its native exchange.
+A numeric filter can forward
 a STRING unchanged. A projection can drop a byte-backed column or consume it in an operation
 that produces a different representation, such as ASCII. The planner can then admit other
 native operators that only see the resulting ordinary Arrow columns. Surviving byte-backed
@@ -581,6 +583,10 @@ even when these differ from the declared BINARY width. Binary selection and char
 casts can feed the same encoder. This does not remove the remaining intermediate fixed-BINARY
 boundary restrictions tracked in [#235](https://github.com/datafusion-contrib/StreamFusion/issues/235).
 
+A direct scalar UDF returning internal Flink `StringData` with verified default arguments can feed
+`TO_BASE64`. One JVM call per batch writes the UDF's result bytes into Arrow Binary, and Rust
+encodes the batch. The raw UDF output is local to this byte consumer.
+
 ### FROM_BASE64 {#from_base64}
 
 Final scalar `FROM_BASE64` projections decode CHAR, VARCHAR, VARBINARY and fixed BINARY inputs
@@ -720,28 +726,32 @@ Three character arguments. Mappings use Unicode codepoints, not graphemes. The f
 ### BTRIM {#btrim}
 
 One-argument space trimming and two-argument character-set trimming with a literal set retain
-their Rust kernels. Empty sets preserve the input and NULL propagates. Per-row sets use Flink's
-generated evaluator when the Calc reads a proven external Java-string conversion. Unknown or
-binary-backed representations retain fallback because Flink can change set behavior after an
-exchange when the first set character is a space.
+their Rust kernels. Empty sets preserve the input and NULL propagates. Per-row sets use the certified Rust kernel or the retained
+Flink evaluator with the original trim-set representation. The streaming row transpose can
+supply an arbitrary-byte source and its optional Java cache. This also covers the two-argument
+`LTRIM` and `RTRIM` forms. An unverified relational boundary retains fallback because Flink can
+change set behavior after an exchange when the first set character is a space.
 
 ### TRIM {#trim}
 
 The SQL `TRIM([BOTH | LEADING | TRAILING] [characters] FROM s)` forms are native with
 a literal trim set, including Unicode, empty and NULL sets. The default set is the ASCII
 space, not all whitespace. These forms reuse BTRIM/LTRIM/RTRIM's character-set kernels.
-Runtime trim sets are also admitted when the Calc reads a proven external Java-string
-conversion, with the same representation gate as BTRIM. Direct input/literal operands use
+Runtime trim sets use the same source admission as BTRIM, including streaming byte-backed inputs. Direct input/literal operands use
 a Rust batch kernel when every non-null string is ASCII, its original Java UTF-16 cache
-agrees with those bytes, and every evaluated trim set is nonempty. All three directions
-interpret the operand as a character set, not a regular expression. NULL propagates.
+agrees with those bytes. An uncached set starting with a space uses Flink's space-only trim
+rule. A cached empty set leaves the source bytes intact. NULL propagates.
 
-Unicode, empty sets, computed operands and scalar consumers retain a fused generated Flink
-evaluator. In particular, an empty set's outcome can depend on its decoded-cache state;
-the Rust certificate declines the complete batch instead of normalizing that state.
+Unicode, uncached empty sets, computed operands and scalar consumers retain a fused generated
+Flink evaluator. The retained evaluator preserves Flink's exception for an uncached empty set.
 Filters and CASE suppress unselected failures, and all-filtered batches skip projections.
-Unknown or binary-backed source representations still fall back under
-[#508](https://github.com/datafusion-contrib/StreamFusion/issues/508).
+A direct runtime trim projection on a byte-backed streaming source can operate on the whole
+Arrow Binary batch. Space-only trim works on arbitrary bytes. Other sets qualify when the set
+and source bytes are ASCII. The original trim-set cache determines the space-only rule.
+Uncertified batches use the retained Flink evaluator in one batched call, with the original
+bytes and cache. Compositions that fail the byte-compatible Calc check use one generated
+Flink program so expression aliases see the same Java cache. Unverified relational boundaries
+remain subject to the representation gate.
 See the [SQL TRIM release measurements](../benchmarks/scalar-functions.md#runtime-sql-trim).
 
 ### ELT {#elt}

@@ -117,7 +117,8 @@ public class StreamPhysicalNativeFilter extends StreamPhysicalNativeSingleRel
   BitSet byteStringOutputs(BitSet input) {
     if (preservesCollections()
         || (udfBinding != null && !udfBinding.isEmpty())
-        || !ByteStringInputs.supportsPredicate(0, kinds, payload, childCounts, input, new BitSet()))
+        || !ByteStringInputs.supportsPredicate(
+            0, kinds, payload, childCounts, longs, input, new BitSet()))
       return null;
     var output = new BitSet();
     for (int i = 0; i < projection.length; i++) {

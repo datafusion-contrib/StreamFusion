@@ -1709,6 +1709,18 @@ fn numeric_buffers_bytes(buffers: &[Option<NumericViewBuffer>]) -> usize {
             .sum::<usize>()
 }
 
+/// A grouping key is still a logical STRING when its Arrow storage is Binary.
+fn group_key_field(batch: &RecordBatch, position: usize, column: usize) -> Field {
+    let source = batch.schema_ref().field(column);
+    let field = Field::new(format!("key{position}"), source.data_type().clone(), true);
+    match source.metadata().get("streamfusion.logical_string") {
+        Some(value) => {
+            field.with_metadata([("streamfusion.logical_string".to_string(), value.clone())].into())
+        }
+        None => field,
+    }
+}
+
 /// Non-windowed `GROUP BY` aggregation over a changelog. Holds per-key state — no windows, no
 /// watermark — and processes a batch in input order like the host's per-record aggregate, so the
 /// emitted change sequence matches byte for byte. Each row's `RowKind` (carried on `$row_kind$`)
@@ -3662,13 +3674,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .key_columns
             .iter()
             .enumerate()
-            .map(|(position, &column)| {
-                Field::new(
-                    format!("key{position}"),
-                    batch.column(column).data_type().clone(),
-                    true,
-                )
-            })
+            .map(|(position, &column)| group_key_field(batch, position, column))
             .collect();
         let mut columns: Vec<ArrayRef> = self
             .key_columns
@@ -4057,13 +4063,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
             .key_columns
             .iter()
             .enumerate()
-            .map(|(position, &column)| {
-                Field::new(
-                    format!("key{position}"),
-                    first.column(column).data_type().clone(),
-                    true,
-                )
-            })
+            .map(|(position, &column)| group_key_field(first, position, column))
             .collect();
         let mut columns: Vec<ArrayRef> = Vec::with_capacity(self.key_columns.len() + num_agg + 1);
         for &column in &self.key_columns {
@@ -6521,6 +6521,77 @@ pub extern "system" fn Java_tech_streamfusion_Native_closeGroupAggregator<'local
     crate::bridge::jni_guard(env, move |_env| unsafe {
         drop(from_handle::<GroupAggregator>(handle));
     })
+}
+
+#[cfg(test)]
+mod byte_key_tests {
+    use super::*;
+    use arrow::array::BinaryArray;
+
+    fn batch(values: Vec<Option<&[u8]>>) -> RecordBatch {
+        let key = Field::new("source_key", DataType::Binary, true)
+            .with_metadata([("streamfusion.logical_string".into(), "1".into())].into());
+        RecordBatch::try_new(
+            Arc::new(Schema::new(vec![key])),
+            vec![Arc::new(BinaryArray::from(values))],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn byte_backed_group_keys_keep_their_bytes_and_counts_after_restore() {
+        let counts = group_aggregate_kind::COUNT;
+        for mini_batch in [false, true] {
+            let input = batch(vec![Some(&[0xff]), Some(&[0xfe]), None, Some(&[0xff])]);
+            let mut aggregate =
+                GroupAggregator::new(vec![counts], vec![0], vec![-1], vec![0], false);
+            if mini_batch {
+                aggregate = aggregate.with_mini_batch();
+            }
+            aggregate.update(&input, 0).unwrap();
+            if mini_batch {
+                aggregate.flush_mini_batch().unwrap();
+            }
+            let snapshot = aggregate.snapshot();
+            let mut restored = GroupAggregator::restore(
+                vec![counts],
+                vec![0],
+                vec![-1],
+                vec![0],
+                false,
+                &snapshot,
+                0,
+            );
+            if mini_batch {
+                restored = restored.with_mini_batch();
+            }
+
+            let mut output = restored.update(&input.slice(0, 3), 1).unwrap();
+            if mini_batch {
+                output = restored.flush_mini_batch().unwrap();
+            }
+            assert_eq!(
+                output.schema_ref().field(0).metadata()["streamfusion.logical_string"],
+                "1",
+            );
+            let keys = output
+                .column(0)
+                .as_any()
+                .downcast_ref::<BinaryArray>()
+                .unwrap();
+            let counts = output
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            assert_eq!(
+                keys.iter()
+                    .zip(counts.values().iter().copied())
+                    .collect::<std::collections::HashMap<_, _>>(),
+                [(Some(&[0xff][..]), 3), (Some(&[0xfe][..]), 2), (None, 2)].into(),
+            );
+        }
+    }
 }
 
 #[cfg(test)]

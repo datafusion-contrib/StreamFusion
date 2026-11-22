@@ -1,5 +1,6 @@
 package tech.streamfusion.planner.stream;
 
+import java.util.BitSet;
 import java.util.List;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
@@ -12,6 +13,7 @@ import org.apache.flink.table.planner.utils.ShortcutUtils;
 import tech.streamfusion.planner.ColumnarInput;
 import tech.streamfusion.planner.ColumnarOutput;
 import tech.streamfusion.planner.FlinkKeyGroupUtils;
+import tech.streamfusion.planner.common.GroupAggregateKind;
 
 /**
  * Columnar form of the non-windowed {@code GROUP BY} aggregate: Arrow batches in and out ({@link
@@ -61,6 +63,23 @@ public class StreamPhysicalNativeColumnarGroupAggregate extends StreamPhysicalNa
     this.recordCountColumn = recordCountColumn;
     this.generateUpdateBefore = generateUpdateBefore;
     this.stateTtlHintMillis = stateTtlHintMillis;
+  }
+
+  /** COUNT(*) uses the stock binary key format and never interprets a string as text. */
+  BitSet byteKeyOutputs(BitSet input) {
+    for (int i = 0; i < aggregateKinds.length; i++) {
+      if (aggregateKinds[i] != GroupAggregateKind.COUNT || valueColumns[i] >= 0) return null;
+    }
+    BitSet remaining = (BitSet) input.clone();
+    BitSet output = new BitSet();
+    for (int i = 0; i < keyColumns.length; i++) {
+      int column = keyColumns[i];
+      if (input.get(column)) {
+        output.set(i);
+        remaining.clear(column);
+      }
+    }
+    return remaining.isEmpty() ? output : null;
   }
 
   boolean hasCollectionResults() {

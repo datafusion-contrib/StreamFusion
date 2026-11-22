@@ -468,6 +468,24 @@ impl CalcExpression {
                     }
                 }
             }
+            if array.data_type() == &DataType::Binary {
+                use crate::expression_protocol::{certified_op, scalar_op, ExpressionKind};
+                let root = self.projection_roots[i];
+                let payload = self.payload[root];
+                let byte_string = match ExpressionKind::from_code(self.kinds[root]) {
+                    Some(ExpressionKind::Call) => {
+                        matches!(payload, scalar_op::CONCAT | scalar_op::CONCAT_WS)
+                    }
+                    Some(ExpressionKind::CertifiedBuiltin) => (certified_op::TRIM
+                        ..=certified_op::RTRIM)
+                        .contains(&self.longs[payload as usize + 2]),
+                    _ => false,
+                };
+                if byte_string {
+                    field = field
+                        .with_metadata([("streamfusion.logical_string".into(), "1".into())].into());
+                }
+            }
             fields.push(field);
         }
         for (field, values) in caches {

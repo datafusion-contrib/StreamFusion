@@ -212,6 +212,7 @@ final class RexExpression implements EncodedExpression {
   private boolean aliasedFunctionInput;
   private boolean skipMapKeyCaches;
   private boolean javaStringInputs;
+  private boolean byteBackedTrimInputs;
   private boolean pairwiseStringComparisons;
   private String jvmExecutionReason;
   private final Set<String> jvmExpressionDetails = new LinkedHashSet<>();
@@ -370,6 +371,7 @@ final class RexExpression implements EncodedExpression {
     var encoder = forCalc(calc);
     encoder.jvmExecutionReason = reason;
     encoder.byteBackedRowResult = byteBackedRowResult;
+    encoder.byteBackedTrimInputs |= byteBackedRowResult;
     return encoder.emitRowCalc(calc) ? encoder : null;
   }
 
@@ -681,7 +683,14 @@ final class RexExpression implements EncodedExpression {
     if(calc.getProgram().getCondition()!=null)calc.getProgram().expandLocalRef(calc.getProgram().getCondition()).accept(objectVisitor);
     encoder.uniqueObjectConstruction=constructions[0]==1;
     encoder.watermarkAvailable = true;
-    encoder.javaStringInputs = HostStringInputs.areJavaBacked(calc.getInput());
+    var input = calc.getInput();
+    encoder.javaStringInputs = HostStringInputs.areJavaBacked(input);
+    // The streaming transpose can carry the original bytes and Java caches from a row scan.
+    encoder.byteBackedTrimInputs =
+        calc instanceof org.apache.flink.table.planner.plan.nodes.physical.stream.StreamPhysicalCalc
+            && input instanceof org.apache.calcite.rel.core.TableScan
+            && !(input instanceof ColumnarOutput)
+            && !HostStringInputs.guaranteesUtf8(input);
     encoder.pairwiseStringComparisons = usesPairwiseStringComparison(calc);
     encoder.aliasedFunctionInput = JvmFunctionConversions.aliasedProducer(calc.getInput());
     return encoder;
@@ -2749,6 +2758,16 @@ final class RexExpression implements EncodedExpression {
               == SqlTypeFamily.BINARY) {
         return emitBuiltinCall(call, ScalarOp.TO_BASE64_BINARY);
       }
+      if (call.getOperands().size() == 1
+          && call.getOperands().get(0) instanceof RexCall
+          && isCharacter(call.getOperands().get(0))) {
+        var source = (RexCall) call.getOperands().get(0);
+        if (FlinkCompat.scalarFunction(source.getOperator()) != null
+            && JvmFunctionConversions.rawStringResult(source)) {
+          add(KIND_CALL, ScalarOp.TO_BASE64_BINARY, 1);
+          return emitUdf(source, true);
+        }
+      }
       return emitEncoding(call, ScalarOp.TO_BASE64, false, true);
     }
     if (nativeFromBase64(call)) {
@@ -4741,6 +4760,18 @@ final class RexExpression implements EncodedExpression {
           return 0;
       }
     }
+    if (isDynamicTrim(call)) {
+      if (call.getOperator().getName().equalsIgnoreCase("BTRIM")
+          && call.getOperator() instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction
+          && ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction) call.getOperator())
+                  .getDefinition()
+              instanceof org.apache.flink.table.functions.BuiltInFunctionDefinition)
+        return CertifiedOp.TRIM;
+      if (call.getOperator() == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.LTRIM)
+        return CertifiedOp.LTRIM;
+      if (call.getOperator() == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.RTRIM)
+        return CertifiedOp.RTRIM;
+    }
     if (call.getKind() == SqlKind.LIKE && call.getOperands().size() == 3) return CertifiedOp.LIKE_WITH_ESCAPE;
     if (call.getKind() == SqlKind.SIMILAR) return CertifiedOp.SIMILAR;
     switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
@@ -4785,10 +4816,12 @@ final class RexExpression implements EncodedExpression {
 
   private boolean emitCertifiedBuiltin(RexCall call, int operation, NativeStringFusion fusion) {
     if (!validateHostStringInputs(call)) return false;
-    boolean sqlTrim = operation >= CertifiedOp.TRIM && operation <= CertifiedOp.RTRIM;
+    boolean trim = operation >= CertifiedOp.TRIM && operation <= CertifiedOp.RTRIM;
+    boolean sqlTrim = trim && isRuntimeSqlTrim(call);
     List<RexNode> operands =
         sqlTrim ? call.getOperands().subList(1, 3)
-            : fusion == null ? call.getOperands() : fusion.operands;
+            : trim ? List.of(call.getOperands().get(1), call.getOperands().get(0))
+                : fusion == null ? call.getOperands() : fusion.operands;
     List<RexNode> references = new ArrayList<>();
     List<org.apache.flink.table.types.logical.LogicalType> types = new ArrayList<>();
     int[] codes = new int[operands.size()];
@@ -4796,7 +4829,7 @@ final class RexExpression implements EncodedExpression {
       RexNode operand = operands.get(i);
       codes[i] = hostCastTypeCode(operand.getType());
       if (codes[i] < 0) return emitHostExpression(call, fusion != null, false);
-      if ((fusion != null || sqlTrim)
+      if ((fusion != null || trim)
           && codes[i] == tech.streamfusion.operator.NativeUdf.TYPE_STRING) {
         codes[i] = tech.streamfusion.operator.NativeUdf.TYPE_INTERNAL;
       }
@@ -4805,18 +4838,23 @@ final class RexExpression implements EncodedExpression {
       types.add(
           org.apache.flink.table.planner.calcite.FlinkTypeFactory.toLogicalType(operand.getType()));
     }
-    int returnCode = hostCastTypeCode(call.getType());
+    boolean byteTrimResult = trim && byteBackedTrimInputs && call == projectionRoot;
+    int returnCode = byteTrimResult
+        ? tech.streamfusion.operator.NativeUdf.TYPE_BINARY
+        : hostCastTypeCode(call.getType());
     if (returnCode < 0) return emitHostExpression(call, fusion != null, false);
+    if (byteTrimResult) binaryStringProjections.add(projectionRoots.size() - 1);
     int index;
     try {
       if (sqlTrim) references.add(0, call.getOperands().get(0));
+      else if (trim) java.util.Collections.swap(references, 0, 1);
       var function =
           FlinkExpressionGenerator.generate(
               fusion == null ? call.clone(call.getType(), references) : fusion.expression(references),
               types.toArray(org.apache.flink.table.types.logical.LogicalType[]::new),
               temporalConfig,
               expressionClassLoader,
-              false);
+              byteTrimResult);
       for (var dependency : function.functions()) if (!claimUdfEvaluation(dependency)) return false;
       index =
           addUdf(
@@ -5205,6 +5243,10 @@ final class RexExpression implements EncodedExpression {
   }
 
   private Method checkedUdfMethod(RexCall call) {
+    return checkedUdfMethod(call, false);
+  }
+
+  private Method checkedUdfMethod(RexCall call, boolean rawStringResult) {
     var scalar = tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator());
     if (scalar == null) {
       return rejectUdfMethod("unsupported function/operator: " + call.getOperator().getName());
@@ -5279,7 +5321,10 @@ final class RexExpression implements EncodedExpression {
           return rejectUdfMethod("MAP UDF arguments require the external Java Map conversion");
       }
     }
-    if (SqlTypeFamily.CHARACTER.contains(call.getType()) && eval.getReturnType() != String.class)
+    if (rawStringResult
+        && !org.apache.flink.table.data.StringData.class.isAssignableFrom(eval.getReturnType()))
+      return rejectUdfMethod("byte-consuming UDF result must return Flink StringData");
+    if (!rawStringResult && isCharacter(call) && eval.getReturnType() != String.class)
       return rejectUdfMethod("UDF character result has no verified UTF-8 representation");
     if ((resultType == SqlTypeName.ARRAY
             && eval.getReturnType() != defaultExternalClass(call.getType()))
@@ -5348,12 +5393,7 @@ final class RexExpression implements EncodedExpression {
         stringOrdering = false;
         break;
     }
-    boolean dynamicTrim =
-        isRuntimeSqlTrim(call)
-            || java.util.Set.of("BTRIM", "LTRIM", "RTRIM").contains(name)
-            && call.getOperands().size() == 2
-            && !(call.getOperands().get(1) instanceof RexLiteral);
-    if ((dynamicTrim
+    if ((isDynamicTrim(call) && !byteBackedTrimInputs
             || stringOrdering
             || (name.equals("GREATEST") || name.equals("LEAST"))
                 && SqlTypeFamily.CHARACTER.contains(call.getType()))
@@ -5377,11 +5417,18 @@ final class RexExpression implements EncodedExpression {
    * otherwise the call falls back.
    */
   private boolean emitUdf(RexCall call) {
-    Method eval = checkedUdfMethod(call);
+    return emitUdf(call, false);
+  }
+
+  private boolean emitUdf(RexCall call, boolean rawStringResult) {
+    Method eval = checkedUdfMethod(call, rawStringResult);
     if (eval == null) return false;
     var scalar = tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator());
     if (!claimUdfEvaluation(scalar)) return false;
-    int returnCode = udfTypeCode(call.getType());
+    if (rawStringResult) jvmFunctionCalls.add(call.getOperator().getName().toUpperCase(Locale.ROOT));
+    int returnCode = rawStringResult
+        ? tech.streamfusion.operator.NativeUdf.TYPE_BINARY
+        : udfTypeCode(call.getType());
     List<RexNode> args = call.getOperands();
     int[] argCodes = args.stream().mapToInt(arg -> udfTypeCode(arg.getType())).toArray();
     int localIndex =
@@ -5654,13 +5701,21 @@ final class RexExpression implements EncodedExpression {
                 .anyMatch(this::containsModernBoundedBinaryCharacterCast));
   }
 
+  static boolean isDynamicTrim(RexCall call) {
+    return isRuntimeSqlTrim(call)
+        || java.util.Set.of("BTRIM", "LTRIM", "RTRIM")
+            .contains(call.getOperator().getName().toUpperCase(Locale.ROOT))
+            && call.getOperands().size() == 2
+            && !(call.getOperands().get(1) instanceof RexLiteral);
+  }
+
   private static boolean containsCacheSensitiveString(RexNode node) {
     if (!(node instanceof RexCall)) return false;
     RexCall call = (RexCall) node;
     String name = call.getOperator().getName();
     return ((name.equalsIgnoreCase("UPPER") || name.equalsIgnoreCase("LOWER"))
             && !NativeConfig.allowsIncompatible(name))
-        || isRuntimeSqlTrim(call)
+        || isDynamicTrim(call)
         || call.getOperands().stream().anyMatch(RexExpression::containsCacheSensitiveString);
   }
 

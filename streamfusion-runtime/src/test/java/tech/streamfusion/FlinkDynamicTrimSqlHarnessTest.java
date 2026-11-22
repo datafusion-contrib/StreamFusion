@@ -11,7 +11,6 @@ import org.apache.flink.table.data.binary.BinaryStringData;
 import org.apache.flink.table.data.binary.BinaryStringDataUtil;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
-import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkDynamicTrimSqlHarnessTest {
   @org.junit.jupiter.api.BeforeEach
@@ -56,9 +55,9 @@ class FlinkDynamicTrimSqlHarnessTest {
   }
 
   @Test
-  void unprovenBinaryStringRepresentationsKeepSafeFallback() throws Exception {
-    NativeParity.assertFallbackReasonContains(FlinkExtremaBuiltinsSqlHarnessTest::binaryEnvironment,
-        "SELECT BTRIM(a,b), LTRIM(a,b), RTRIM(a,b) FROM src", "string representation");
+  void byteBackedRuntimeTrimSetsRetainNativeCalc() throws Exception {
+    BuiltinFunctionParity.assertParity(FlinkExtremaBuiltinsSqlHarnessTest::binaryEnvironment,
+        "SELECT BTRIM(a,b), LTRIM(a,b), RTRIM(a,b) FROM src");
   }
 
   private TableEnvironment environment() {

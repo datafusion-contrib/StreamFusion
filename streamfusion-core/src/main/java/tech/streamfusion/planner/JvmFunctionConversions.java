@@ -34,6 +34,18 @@ public final class JvmFunctionConversions {
     }
   }
 
+  static boolean rawStringResult(RexCall call) {
+    if (!(call.getOperator() instanceof BridgingSqlFunction)) return false;
+    try {
+      var inferred = infer(call);
+      return org.apache.flink.table.data.StringData.class.isAssignableFrom(
+              inferred.getOutputDataType().getConversionClass())
+          && inferred.getExpectedArgumentTypes().stream().allMatch(JvmFunctionConversions::defaults);
+    } catch (RuntimeException failure) {
+      return false;
+    }
+  }
+
   static boolean verifiedScalar(RexCall call) {
     if (!(call.getOperator() instanceof BridgingSqlFunction)
         || !JvmFunctionTypes.nested(call.getType())

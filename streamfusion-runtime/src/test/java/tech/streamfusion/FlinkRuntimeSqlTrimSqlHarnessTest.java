@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.planner.NativePlanner;
-import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkRuntimeSqlTrimSqlHarnessTest {
   @ParameterizedTest
@@ -48,9 +47,9 @@ class FlinkRuntimeSqlTrimSqlHarnessTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"BOTH", "LEADING", "TRAILING"})
-  void binaryOnlySourcesRetainTheRepresentationFallback(String direction) throws Exception {
-    NativeParity.assertFallbackReasonContains(FlinkExtremaBuiltinsSqlHarnessTest::binaryEnvironment,
-        "SELECT TRIM(" + direction + " b FROM a) FROM src", "string representation");
+  void byteBackedRuntimeTrimSetsRetainNativeCalc(String direction) throws Exception {
+    BuiltinFunctionParity.assertParity(FlinkExtremaBuiltinsSqlHarnessTest::binaryEnvironment,
+        "SELECT TRIM(" + direction + " b FROM a) FROM src");
   }
 
   @Test

@@ -377,11 +377,7 @@ impl<S: KeyedStateStore<GroupKeyState>> GroupAggregator<S> {
         let mut fields = Vec::with_capacity(columns.capacity());
         for (position, &column) in self.key_columns.iter().enumerate() {
             columns.push(gather(column)?);
-            fields.push(Field::new(
-                format!("key{position}"),
-                batches[0].column(column).data_type().clone(),
-                true,
-            ));
+            fields.push(super::group_key_field(&batches[0], position, column));
         }
         columns.push(gather(self.value_columns[0] as usize)?);
         fields.push(Field::new("result0", self.result_types[0].clone(), true));
