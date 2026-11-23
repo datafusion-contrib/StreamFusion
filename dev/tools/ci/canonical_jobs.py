@@ -9,8 +9,8 @@ from pathlib import Path
 import signal
 import subprocess
 
-from dev.tools.ci.runtime_test_shards import load_durations, partition_workers
-from dev.tools.ci.canonical_coverage import audit, costs as coverage_costs, load_inventory
+from dev.tools.ci.runtime_test_shards import canonical_durations, load_durations, partition_workers
+from dev.tools.ci.canonical_coverage import audit, load_inventory
 
 
 def selections(includes, workers, line, inventory=None, coverage="full"):
@@ -31,7 +31,7 @@ def selections(includes, workers, line, inventory=None, coverage="full"):
         if (data["line"] != line or manifest.get("coverage") != coverage
                 or manifest.get("coverage_inventory_sha256") != hashlib.sha256(inventory.read_bytes()).hexdigest()):
             raise ValueError("Canonical worker coverage differs from its inventory")
-        costs = coverage_costs(costs, data, coverage)
+        costs = canonical_durations(costs, data, coverage)
     lanes = partition_workers(names, workers, costs)
     directory = includes.with_suffix(".workers")
     directory.mkdir(exist_ok=False)
