@@ -57,7 +57,7 @@ class KafkaMavenTest(unittest.TestCase):
                         self.assertEqual([
                             str(root / "wrapper home"), str(kafka if kafka_wrapper else flink),
                             str(RUNNER.parents[1] / "bin/ci-maven-dependencies.py"), "--maven", "./mvnw", "--graph",
-                            "--repository", str(root / "isolated m2"),
+                            "--offline-first", "--repository", str(root / "isolated m2"),
                             "--pom", str(kafka / "flink-connector-kafka/pom.xml"), "--define", f"flink.version={version}",
                         ], calls[0])
                         if not resolve_status:

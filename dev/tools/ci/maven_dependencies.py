@@ -34,7 +34,7 @@ TRANSPORT_OPTIONS = [
 
 
 def resolve(options):
-    settings = str(ROOT / "dev/flink-suite/settings.xml")
+    settings = str(getattr(options, "settings", None) or ROOT / "dev/flink-suite/settings.xml")
     command = [options.maven, "-B", "-ntp", "-s", settings, "-gs", settings,
                *TRANSPORT_OPTIONS]
     if options.artifact:
@@ -112,6 +112,8 @@ def main():
     parser.add_argument("--pom", type=Path)
     parser.add_argument("--repository", type=Path)
     parser.add_argument("--maven", default="mvn")
+    parser.add_argument("--settings", type=Path,
+                        help="Use this settings file for both user and global settings")
     parser.add_argument("--define", action="append", default=[], metavar="PROPERTY=VALUE",
                         help="Set the same model property used by the eventual Maven build")
     parser.add_argument("--offline-first", action="store_true",

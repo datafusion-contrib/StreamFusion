@@ -87,6 +87,13 @@ The HTTP resolver keeps two retries per request and starts with a 15-second cool
 the server omits `Retry-After`, giving a throttled runner more time before resending.
 Legacy Delta runs its test lifecycle offline once the required artifacts are present.
 
+The JDK 17 dependency preparation also resolves the three runtime test fixture graphs and
+the released Surefire providers and launchers they need. Each fixture still starts with an
+empty local repository, populated from a read-only file mirror of the prepared repository.
+It verifies that incomplete test runtime preparation fails offline, then resolves the missing
+provider artifacts and runs both original Jupiter and Vintage checks offline. CI runs that
+regression without making three sets of cold downloads from Maven Central.
+
 ## Canonical coverage budget and connector scheduling
 
 Routine CI runs deterministic representative canonical matrices across all four Flink/JDK

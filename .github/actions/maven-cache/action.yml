@@ -13,7 +13,7 @@ runs:
     - id: identity
       shell: bash
       env:
-        CACHE_KEY: sf-maven-v1-${{ runner.os }}-${{ runner.arch }}-jdk${{ inputs.jdk }}-${{ hashFiles('**/pom.xml', '.mvn/**', 'dev/flink-suite/settings.xml', 'dev/flink-suite/paimon-compaction-releases.json', 'bin/ci-maven-dependencies.py', 'dev/tools/ci/maven_dependencies.py', 'bin/ci_maven_cache.py', 'dev/tools/ci/maven_cache.py', '.github/actions/maven-cache/action.yml') }}
+        CACHE_KEY: sf-maven-v1-${{ runner.os }}-${{ runner.arch }}-jdk${{ inputs.jdk }}-${{ hashFiles('**/pom.xml', '.mvn/**', 'dev/flink-suite/settings.xml', 'dev/flink-suite/paimon-compaction-releases.json', 'dev/flink-suite/runtime-fixture/cohorts.json', 'bin/ci-maven-dependencies.py', 'dev/tools/ci/maven_dependencies.py', 'bin/ci_maven_cache.py', 'dev/tools/ci/maven_cache.py', '.github/actions/maven-cache/action.yml') }}
       run: printf 'key=%s\n' "$CACHE_KEY" >> "$GITHUB_OUTPUT"
     - id: cache
       if: inputs.mode == 'prepare'
