@@ -20,8 +20,8 @@ if [[ "$(git -C "${DELTA_ROOT}" rev-parse HEAD)" != "${DELTA_COMMIT}" ]] \
   exit 2
 fi
 
-python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" --pom "${AUDIT_POM}" --resolve-project
-python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
+python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" --offline-first --pom "${AUDIT_POM}" --resolve-project
+python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" --offline-first \
   --artifact org.apache.maven.surefire:surefire-junit-platform:3.5.3 \
   --artifact org.junit.platform:junit-platform-launcher:1.10.2
 

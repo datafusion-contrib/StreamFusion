@@ -242,6 +242,11 @@ if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" != "true" ]]; then
   fi
 
   if [[ "${SUITE_MODE}" == "paimon" ]]; then
+    if [[ "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" != "true" && "${PAIMON_TAG}" == "release-2.0.0" ]]; then
+      python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" --offline-first \
+        --repository "${SUITE_MAVEN_REPO}" \
+        --artifact org.apache.maven.plugins:maven-enforcer-plugin:3.0.0-M1 || exit $?
+    fi
     echo "Building the pinned Paimon Flink connector and compiling its untouched SQL integration tests..."
     mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${PAIMON_ROOT}/pom.xml" \
       -Dmaven.repo.local="${SUITE_MAVEN_REPO}" "${PAIMON_BUILD_ARGS[@]}" \
@@ -282,6 +287,10 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
     --artifact "org.apache.paimon:paimon-vfs-hadoop:${PAIMON_VERSION}"
     --artifact "org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0"
   )
+  if [[ "${PAIMON_TAG}" == "release-2.0.0" ]]; then
+    # The Paimon reactor needs this plugin before it can compile the connector or run tests.
+    test_runtime_artifacts+=(--artifact "org.apache.maven.plugins:maven-enforcer-plugin:3.0.0-M1")
+  fi
   if [[ "${FLINK_LINE}" == "2.2" ]]; then
     test_runtime_artifacts+=(
       --artifact "org.apache.maven.surefire:surefire-junit-platform:3.2.5"
@@ -298,7 +307,7 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
     cd "${FLINK_ROOT}" &&
       MAVEN_USER_HOME="${SUITE_MAVEN_USER_HOME}" python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
         --maven "${FLINK_ROOT}/mvnw" \
-        --repository "${SUITE_MAVEN_REPO}" \
+        --repository "${SUITE_MAVEN_REPO}" --offline-first \
         "${test_runtime_artifacts[@]}"
   ) || exit $?
   if [[ "${FLINK_LINE}" == "2.2" ]]; then

@@ -75,6 +75,15 @@ are not retried. The lake matrix uses `fail-fast: false`, so one transport failu
 an unrelated module and force its complete rerun at the end of qualification. Cold producers may
 still encounter provider/shared-egress throttling; the cache prevents consumers amplifying it.
 
+The legacy Delta host audit verifies its cached dependency graph and Surefire providers in
+offline mode before opening a connection to Maven Central. Shared upstream preparation uses
+the same cache check for test-runtime artifacts and includes the pinned Paimon 2.0 Maven
+Enforcer plugin. This prepares the plugin before the Paimon consumer starts its reactor. An
+incomplete cache falls back to bounded dependency resolution, including on a cold fork.
+The HTTP resolver keeps two retries per request and starts with a 15-second cooldown when
+the server omits `Retry-After`, giving a throttled runner more time before resending.
+Legacy Delta runs its test lifecycle offline once the required artifacts are present.
+
 ## Canonical coverage budget and connector scheduling
 
 Routine CI runs deterministic representative canonical matrices across all four Flink/JDK

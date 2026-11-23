@@ -22,9 +22,11 @@ TRANSPORT_OPTIONS = [
     # Hosted Maven and upstream wrappers span both Resolver generations and Wagon.
     "-Daether.connector.requestTimeout=60000",
     "-Daether.connector.http.retryHandler.count=2",
+    "-Daether.connector.http.retryHandler.interval=15000",
     "-Daether.connector.http.retryHandler.serviceUnavailable=429,500,502,503,504",
     "-Daether.transport.http.requestTimeout=60000",
     "-Daether.transport.http.retryHandler.count=2",
+    "-Daether.transport.http.retryHandler.interval=15000",
     "-Daether.transport.http.retryHandler.serviceUnavailable=429,500,502,503,504",
     "-Dmaven.wagon.rto=60000",
     "-Dmaven.wagon.http.retryHandler.count=2",
@@ -61,13 +63,26 @@ def resolve(options):
     commands = ([command + [ARTIFACT_GOAL, "-Dartifact=" + artifact, "-Dtransitive=" + transitive]
                  for artifact in options.artifact] if options.artifact else [command + goal])
     for invocation in commands:
-        status = resolve_command(invocation)
+        status = resolve_command(invocation, offline_first=getattr(options, "offline_first", False))
         if status:
             return status
     return 0
 
 
-def resolve_command(command):
+def resolve_command(command, *, offline_first=False):
+    if offline_first:
+        try:
+            cached = subprocess.run([command[0], "-o", *command[1:]], timeout=TIMEOUT_SECONDS,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        except subprocess.TimeoutExpired:
+            pass
+        except OSError as error:
+            print(f"Cannot start Maven dependency resolution: {error}", file=sys.stderr)
+            return 1
+        else:
+            if cached.returncode == 0:
+                print("Maven dependencies already available offline", flush=True)
+                return 0
     attempts = len(DELAYS) + 1
     for attempt in range(attempts):
         print(f"Resolving Maven dependencies (attempt {attempt + 1}/{attempts})", flush=True)
@@ -97,6 +112,8 @@ def main():
     parser.add_argument("--maven", default="mvn")
     parser.add_argument("--define", action="append", default=[], metavar="PROPERTY=VALUE",
                         help="Set the same model property used by the eventual Maven build")
+    parser.add_argument("--offline-first", action="store_true",
+                        help="Reuse a complete cache for pinned releases before attempting downloads")
     parser.add_argument("--no-transitive", action="store_true",
                         help="Fetch exact artifacts from an already mediated dependency closure")
     resolution = parser.add_mutually_exclusive_group()

@@ -155,6 +155,29 @@ class MavenDependenciesTest(unittest.TestCase):
         self.assertTrue(15 <= sleeps[0].args[0] <= 22.5)
         self.assertTrue(45 <= sleeps[1].args[0] <= 67.5)
 
+    def test_offline_first_reuses_a_complete_cache_without_an_online_attempt(self):
+        options = self.options()
+        options.offline_first = True
+        with patch.object(PREPARE.subprocess, "run",
+                          return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertEqual(0, PREPARE.resolve(options))
+        run.assert_called_once()
+        command = run.call_args.args[0]
+        self.assertEqual(["mvn", "-o"], command[:2])
+        self.assertEqual(PREPARE.GOAL, command[-1])
+
+    def test_offline_first_cache_miss_preserves_bounded_online_recovery(self):
+        options = self.options()
+        options.offline_first = True
+        results = [subprocess.CompletedProcess([], status) for status in (1, 1, 0)]
+        with patch.object(PREPARE.subprocess, "run", side_effect=results) as run, \
+                patch.object(PREPARE.time, "sleep") as sleep:
+            self.assertEqual(0, PREPARE.resolve(options))
+        offline, online, retry = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(["mvn", "-o", *online[1:]], offline)
+        self.assertEqual(["mvn", "-U", *online[1:]], retry)
+        sleep.assert_called_once()
+
     def test_persistent_failure_and_timeout_remain_blocking(self):
         for statuses, expected in (([7, 7, 7], 7),
                                    ([subprocess.TimeoutExpired("mvn", 600)] * 3, 124)):
@@ -204,7 +227,7 @@ class MavenDependenciesTest(unittest.TestCase):
                                 requests.append(self.path)
                                 if len(requests) <= 2:
                                     if transport == "native":
-                                        self.send_error(502)
+                                        self.send_error(429 if len(requests) == 1 else 502)
                                     else:
                                         self.connection.shutdown(socket.SHUT_RDWR)
                                         self.connection.close()
@@ -240,6 +263,12 @@ class MavenDependenciesTest(unittest.TestCase):
                                 patch.object(PREPARE, "TIMEOUT_SECONDS", 120), \
                                 patch.object(PREPARE, "TRANSPORT_OPTIONS", transport_options):
                             self.assertEqual(0, PREPARE.resolve(options))
+                            self.assertEqual(3, len(requests))
+                            options.offline_first = True
+                            try:
+                                self.assertEqual(0, PREPARE.resolve(options))
+                            finally:
+                                options.offline_first = False
                         self.assertEqual(3, len(requests))
                     finally:
                         server.shutdown()
