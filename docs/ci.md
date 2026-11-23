@@ -93,11 +93,20 @@ Unselected combinations are absent from discovery; they are not manufactured pas
 | 1.18 | 9,948 | 3,591 |
 | Both JDKs combined | 53,360 | 15,150 |
 
-This removes 71.6% of routine parameter combinations. Four shards per cohort use 16 runner
-jobs instead of 40; each shard retains four balanced sequential worker lanes. Scheduling costs
-scale the recorded full-class cost by the selected/full invocation ratio. These are placement
-estimates, not measured new runtimes. Local inventories independently match the prior qualified
-full-case counts for every concrete class on both lines and both JDKs.
+This removes 71.6% of routine parameter combinations. Routine qualification uses 16 runner
+jobs with four sequential worker lanes each. Flink 2.2 uses five shards on JDK 11 and four on
+JDK 17. Flink 1.18 uses four on JDK 11 and three on JDK 17. Both the shard and lane partitions
+use measured class durations for the representative selection on that Flink/JDK pair. New
+classes use the recorded full-class estimate scaled by their selected/full invocation ratio.
+Abstract fixtures have no execution cost in the representative plan.
+
+The weights average JUnit class elapsed times from the [November 21](https://github.com/jordepic/StreamFusion-contrib/actions/runs/44895428498)
+and [November 22](https://github.com/jordepic/StreamFusion-contrib/actions/runs/45040740560)
+qualifications. In cross-run replay, using either run's weights to partition the other run's
+class durations reduced the longest modeled lane from 149.1 to 114.6 minutes and from 151.8
+to 110.8 minutes. The replay keeps all 15,150 selected invocation identities and the same
+16 jobs and 64 worker lanes. It models the execution tail using observed class times and
+excludes queueing, setup, and changes in runner speed.
 
 Each preparation inventories all compiled canonical fixtures without starting a cluster. Its
 full argument sets, selected indices and required interaction axes travel inside the verified
@@ -124,6 +133,8 @@ Delta, Iceberg and format suites have independent upstream matrix entries, resto
 prepared artifacts. Doris uses the common connector matrix while retaining its server fixture,
 adapter assertions and unchanged upstream SQL tests. Current Doris and Iceberg adapters target
 Flink 2.2/JDK 17; supported cross-version coverage for other connectors remains unchanged.
+The JDK 17 instrumentation agent and its line-independent tooling tests run once in the
+Flink 2.2 lane. The Flink 1.18 lane still checks its explicit native and fallback contracts.
 
 ## Contributing from a personal fork
 
@@ -1298,7 +1309,7 @@ under the current runner's temporary directory and are removed after outcomes an
 archive diagnostics are uploaded. Default local Maven runs do not enable this cache.
 Each runner uses four fresh 1 GiB Surefire JVMs, with process reuse disabled. The earlier 2.2-only
 change preserved its 118 classes on each JDK while reducing that line's runner jobs from 64 to 32.
-The required two-line matrix now has 40 jobs, preserving each line's compiled inventory. The stock
+The exhaustive two-line matrix has 40 jobs, preserving each line's compiled inventory. The stock
 and native worker processes retain their separate 1 GiB heaps; native memory and containers
 also need headroom. The complete 32-shard hosted canonical matrix passed on both JDKs;
 the full CI and upstream aggregates remain required for source changes.

@@ -206,7 +206,7 @@ jobs:
 
       # The upstream-suite instrumentation agent is a separate JDK 17 development tool.
       - name: Test upstream execution evidence checks
-        if: matrix.jdk == '17' && matrix.shard == 1
+        if: matrix.line == '2.2' && matrix.jdk == '17' && matrix.shard == 1
         run: |
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml package
           python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'
@@ -375,11 +375,26 @@ jobs:
       matrix:
         line: ['2.2', '1.18']
         jdk: ['11', '17']
-        shard: ${{ fromJSON(inputs.canonical_coverage == 'full' && '[1,2,3,4,5,6,7,8,9,10]' || '[1,2,3,4]') }}
+        shard: ${{ fromJSON(inputs.canonical_coverage == 'full' && '[1,2,3,4,5,6,7,8,9,10]' || '[1,2,3,4,5]') }}
+        exclude: >-
+          ${{ fromJSON(inputs.canonical_coverage == 'full' && '[]' ||
+            '[{"line":"1.18","shard":5},{"line":"1.18","jdk":"17","shard":4},{"line":"2.2","jdk":"17","shard":5}]') }}
         include:
           - line: '2.2'
+            jdk: '11'
+            representative_shards: 5
+            profiles: 'canonical-kafka'
+          - line: '2.2'
+            jdk: '17'
+            representative_shards: 4
             profiles: 'canonical-kafka'
           - line: '1.18'
+            jdk: '11'
+            representative_shards: 4
+            profiles: 'flink-1.18,canonical-kafka'
+          - line: '1.18'
+            jdk: '17'
+            representative_shards: 3
             profiles: 'flink-1.18,canonical-kafka'
     env:
       MAVEN_ARGS: -o
@@ -417,7 +432,7 @@ jobs:
           python3 bin/ci_runtime_test_shards.py \
             --classes streamfusion-runtime/target/test-classes \
             --suite canonical --line ${{ matrix.line }} \
-            --count ${{ inputs.canonical_coverage == 'full' && '10' || '4' }} --index ${{ matrix.shard }} \
+            --count ${{ inputs.canonical_coverage == 'full' && 10 || matrix.representative_shards }} --index ${{ matrix.shard }} \
             --inventory streamfusion-runtime/target/test-classes/canonical-coverage.json \
             --coverage '${{ inputs.canonical_coverage || 'representative' }}' \
             --output "$RUNNER_TEMP/canonical-job-includes.txt"

@@ -66,6 +66,28 @@ class RuntimeTestShardsTest(unittest.TestCase):
         self.assertFalse(any(set(pinned) <= set(lane) for lane in plan))
         self.assertEqual([121, 140], [sum(durations.get(name, 1) for name in lane) for lane in plan])
 
+    def test_representative_costs_track_jdk_and_preserve_exhaustive_and_new_class_costs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "representative-durations.json"
+            path.write_text(json.dumps({"seconds_by_cohort": {
+                "2.2-jdk11": {"test/MeasuredJobTest": 30},
+                "2.2-jdk17": {"test/MeasuredJobTest": 20},
+            }}))
+            baseline = {"test/MeasuredJobTest": 100, "test/NewJobTest": 60,
+                        "test/AbstractJobTest": 90}
+            inventory = {"line": "2.2", "classes": {
+                "test.MeasuredJobTest": {"full": 4, "representative": 2, "abstract": False},
+                "test.NewJobTest": {"full": 3, "representative": 2, "abstract": False},
+                "test.AbstractJobTest": {"full": 0, "representative": 0, "abstract": True},
+            }}
+            with patch.object(shards, "REPRESENTATIVE_DURATIONS", path):
+                for jdk, measured in ((11, 30), (17, 20)):
+                    cohort = {**inventory, "jdk": jdk}
+                    self.assertEqual({"test/MeasuredJobTest": measured, "test/NewJobTest": 40,
+                                      "test/AbstractJobTest": 0},
+                                     shards.canonical_durations(baseline, cohort, "representative"))
+                    self.assertEqual(baseline, shards.canonical_durations(baseline, cohort, "full"))
+
     def test_worker_lanes_never_emit_an_empty_includes_file(self):
         for count in (1, 2, 4):
             with self.subTest(count=count):

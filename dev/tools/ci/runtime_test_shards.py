@@ -24,6 +24,7 @@ FIRST_SHARD_CLASSES = AUDIT_CLASSES | {
     "tech/streamfusion/FlinkNestedBridgeTableFunctionSqlHarnessTest",
 }
 DURATIONS = Path(__file__).resolve().parents[3] / "dev/ci/runtime-durations.json"
+REPRESENTATIVE_DURATIONS = DURATIONS.with_name("canonical-representative-durations.json")
 RELOCATIONS = Path(__file__).resolve().parents[3] / "dev/runtime-layout/test-relocations.tsv"
 
 
@@ -55,6 +56,22 @@ def load_durations(line=None):
     _validate_durations(provisional)
     for name, floor in provisional.items():
         durations[name] = max(durations.get(name, 0), floor)
+    return durations
+
+
+def canonical_durations(durations, inventory, coverage):
+    durations = coverage_costs(durations, inventory, coverage)
+    if coverage == "representative":
+        cohort = f"{inventory['line']}-jdk{inventory['jdk']}"
+        recorded = json.loads(REPRESENTATIVE_DURATIONS.read_text())
+        measured = relocated_costs(recorded["seconds_by_cohort"][cohort])
+        _validate_durations(measured)
+        for name, fixture in inventory["classes"].items():
+            path = name.replace(".", "/")
+            if fixture["abstract"]:
+                durations[path] = 0.0
+            elif path in measured:
+                durations[path] = measured[path]
     return durations
 
 
@@ -130,7 +147,7 @@ def write_selection(classes, count, index, output, suite="all", line=None,
             raise ValueError("Coverage inventory does not match the selected canonical line")
         if set(data["classes"]) != {name.replace("/", ".") for name in candidates_for_suite(classes, suite)}:
             raise ValueError("Coverage inventory differs from the compiled canonical classes")
-        durations = coverage_costs(durations, data, coverage)
+        durations = canonical_durations(durations, data, coverage)
     shards = partition(classes, count, suite, durations=durations, line=line)
     output.write_text("".join(name + ".java\n" for name in shards[index - 1]))
     manifest = {"shard": index, "count": count, "suite": suite, "flink_line": line,
