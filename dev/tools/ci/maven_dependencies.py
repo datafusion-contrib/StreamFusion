@@ -92,6 +92,8 @@ def resolve_command(command, *, offline_first=False):
             status = subprocess.run(invocation, timeout=TIMEOUT_SECONDS).returncode
         except subprocess.TimeoutExpired:
             status = 124
+            print(f"Maven dependency resolution timed out after {TIMEOUT_SECONDS} seconds",
+                  file=sys.stderr, flush=True)
         except OSError as error:
             print(f"Cannot start Maven dependency resolution: {error}", file=sys.stderr)
             return 1

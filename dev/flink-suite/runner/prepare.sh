@@ -22,7 +22,7 @@ prepare_kafka_maven() {
   (
     cd "${wrapper_root}" &&
       MAVEN_USER_HOME="${SUITE_MAVEN_USER_HOME}" python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
-        --maven ./mvnw --graph --repository "${SUITE_MAVEN_REPO}" \
+        --maven ./mvnw --graph --offline-first --repository "${SUITE_MAVEN_REPO}" \
         --pom "${KAFKA_CONNECTOR_ROOT}/flink-connector-kafka/pom.xml" --define "flink.version=${FLINK_VERSION}"
   )
 }
@@ -242,10 +242,10 @@ if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" != "true" ]]; then
   fi
 
   if [[ "${SUITE_MODE}" == "paimon" ]]; then
-    if [[ "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" != "true" && "${PAIMON_TAG}" == "release-2.0.0" ]]; then
+    if [[ "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" != "true" && -n "${PAIMON_ENFORCER_ARTIFACT}" ]]; then
       python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" --offline-first \
         --repository "${SUITE_MAVEN_REPO}" \
-        --artifact org.apache.maven.plugins:maven-enforcer-plugin:3.0.0-M1 || exit $?
+        --artifact "${PAIMON_ENFORCER_ARTIFACT}" || exit $?
     fi
     echo "Building the pinned Paimon Flink connector and compiling its untouched SQL integration tests..."
     mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${PAIMON_ROOT}/pom.xml" \
@@ -287,9 +287,9 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
     --artifact "org.apache.paimon:paimon-vfs-hadoop:${PAIMON_VERSION}"
     --artifact "org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0"
   )
-  if [[ "${PAIMON_TAG}" == "release-2.0.0" ]]; then
+  if [[ -n "${PAIMON_ENFORCER_ARTIFACT}" ]]; then
     # The Paimon reactor needs this plugin before it can compile the connector or run tests.
-    test_runtime_artifacts+=(--artifact "org.apache.maven.plugins:maven-enforcer-plugin:3.0.0-M1")
+    test_runtime_artifacts+=(--artifact "${PAIMON_ENFORCER_ARTIFACT}")
   fi
   if [[ "${FLINK_LINE}" == "2.2" ]]; then
     test_runtime_artifacts+=(
