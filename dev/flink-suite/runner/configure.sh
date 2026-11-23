@@ -34,6 +34,13 @@ fi
 readonly KAFKA_CONNECTOR_TAG
 readonly PAIMON_VERSION="${PAIMON_VERSION:-${PAIMON_DEFAULT_VERSION}}"
 readonly PAIMON_TAG="${PAIMON_TAG:-release-${PAIMON_VERSION}}"
+case "${PAIMON_TAG}" in
+  release-2.0.0|release-2.1.0)
+    PAIMON_ENFORCER_ARTIFACT=org.apache.maven.plugins:maven-enforcer-plugin:3.0.0-M1
+    ;;
+  *) PAIMON_ENFORCER_ARTIFACT="" ;;
+esac
+readonly PAIMON_ENFORCER_ARTIFACT
 readonly DELTA_VERSION="${DELTA_VERSION:-4.4.0}"
 readonly SUITE_BASE_ROOT="${FLINK_SUITE_ROOT:-${REPO_ROOT}/.flink-suite}"
 readonly SUITE_ROOT="${SUITE_BASE_ROOT}/${FLINK_LINE}"

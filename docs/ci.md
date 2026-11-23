@@ -75,6 +75,25 @@ are not retried. The lake matrix uses `fail-fast: false`, so one transport failu
 an unrelated module and force its complete rerun at the end of qualification. Cold producers may
 still encounter provider/shared-egress throttling; the cache prevents consumers amplifying it.
 
+The legacy Delta host audit verifies its cached dependency graph and Surefire providers in
+offline mode before opening a connection to Maven Central. Shared upstream preparation uses
+the same cache check for test-runtime artifacts and includes the pinned Maven Enforcer plugin
+from the Paimon 2.0 and 2.1 release POMs. This prepares the plugin before the Paimon consumer
+starts its reactor. Kafka's dependency graph also tries the prepared cache first, so a warm
+graph can resolve even while the remote repository stalls. An incomplete cache falls back to
+bounded dependency resolution, including on a cold fork. A timed-out resolution prints its
+deadline before any retry.
+The HTTP resolver keeps two retries per request and starts with a 15-second cooldown when
+the server omits `Retry-After`, giving a throttled runner more time before resending.
+Legacy Delta runs its test lifecycle offline once the required artifacts are present.
+
+The JDK 17 dependency preparation also resolves the three runtime test fixture graphs and
+the released Surefire providers and launchers they need. Each fixture still starts with an
+empty local repository, populated from a read-only file mirror of the prepared repository.
+It verifies that incomplete test runtime preparation fails offline, then resolves the missing
+provider artifacts and runs both original Jupiter and Vintage checks offline. CI runs that
+regression without making three sets of cold downloads from Maven Central.
+
 ## Canonical coverage budget and connector scheduling
 
 Routine CI runs deterministic representative canonical matrices across all four Flink/JDK
@@ -298,8 +317,9 @@ requeuing the completed check can retain its old conclusion. An active attempt c
 after the exact-head workflow succeeds. This also prevents an earlier successful attempt from
 satisfying the gate during a rerun. A brief startup grace
 allows fork runs to appear after a PR update; absent/disabled workflows still report action
-required. Temporary network/server failures retry within the same deadline; permission failures
-remain visible. Deadline exhaustion fails the watcher without passing unfinished checks.
+required. A closed HTTP response during status refresh is treated like a temporary network
+failure and polling continues within the same deadline. Permission failures remain visible.
+Deadline exhaustion fails the watcher without passing unfinished checks.
 
 The reporter's `actions: write` permission is used to dispatch only this trusted reporter workflow
 with a PR number and deadline; no contributor workflow is dispatched and no personal access token

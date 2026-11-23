@@ -13,47 +13,51 @@ import xml.etree.ElementTree as ET
 
 RUNNER = Path(__file__).resolve().parents[2] / "bin/flink-suite.sh"
 ROOT = RUNNER.parents[1]
+FIXTURE = ROOT / "dev/flink-suite/runtime-fixture"
+
+
+def fixture_settings(directory):
+    seed = os.environ.get("SF_RUNTIME_TEST_MAVEN_SEED")
+    if not seed:
+        return ROOT / "dev/flink-suite/settings.xml"
+    seed = Path(seed).resolve()
+    if not seed.is_dir():
+        raise ValueError(f"Missing shared Maven fixture cache: {seed}")
+    settings = ET.Element("settings")
+    mirrors = ET.SubElement(settings, "mirrors")
+    mirror = ET.SubElement(mirrors, "mirror")
+    ET.SubElement(mirror, "id").text = "shared-runtime-fixture-cache"
+    ET.SubElement(mirror, "mirrorOf").text = "*"
+    ET.SubElement(mirror, "url").text = seed.as_uri()
+    path = Path(directory) / "settings.xml"
+    ET.ElementTree(settings).write(path, encoding="utf-8")
+    return path
 
 
 class TestRuntimePreparationTest(unittest.TestCase):
     def test_real_providers_start_offline_after_isolated_resolution(self):
-        settings = str(ROOT / "dev/flink-suite/settings.xml")
         with tempfile.TemporaryDirectory() as directory:
-            for line, surefire, junit, platform, original_opentest in (
-                    ("2.2", "3.2.2", "5.11.4", "1.11.4", "1.2.0"),
-                    ("1.18", "3.0.0-M5", "5.9.1", "1.9.1", "1.1.1"),
-                    ("kafka-5.0", "3.2.5", "5.13.3", "1.13.3", "1.2.0")):
+            settings = str(fixture_settings(directory))
+            for cohort in json.loads((FIXTURE / "cohorts.json").read_text()):
+                line = cohort["line"]
+                surefire = cohort["surefire"]
+                platform = cohort["platform"]
+                original_opentest = cohort["original_opentest"]
                 with self.subTest(line=line):
                     root = Path(directory) / line
                     source = root / "src/test/java"
                     source.mkdir(parents=True)
                     repository = root / "m2"
                     pom = root / "pom.xml"
-                    pom.write_text(f'''<project xmlns="http://maven.apache.org/POM/4.0.0">
-  <modelVersion>4.0.0</modelVersion><groupId>test</groupId><artifactId>upstream-runtime</artifactId><version>1</version>
-  <properties><maven.compiler.release>11</maven.compiler.release></properties>
-  <dependencyManagement><dependencies><dependency>
-    <groupId>org.junit</groupId><artifactId>junit-bom</artifactId><version>{junit}</version><type>pom</type><scope>import</scope>
-  </dependency></dependencies></dependencyManagement>
-  <dependencies>
-    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
-    <dependency><groupId>org.junit.vintage</groupId><artifactId>junit-vintage-engine</artifactId><scope>test</scope></dependency>
-  </dependencies>
-  <build><plugins>
-    <plugin><artifactId>maven-resources-plugin</artifactId><version>3.3.1</version></plugin>
-    <plugin><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
-    <plugin><artifactId>maven-surefire-plugin</artifactId><version>{surefire}</version>
-      <configuration><forkNode implementation="org.apache.maven.plugin.surefire.extensions.SurefireForkNodeFactory"/></configuration>
-      <executions><execution><id>integration-tests</id><goals><goal>test</goal></goals></execution></executions>
-    </plugin>
-  </plugins></build>
-</project>''')
+                    shutil.copyfile(FIXTURE / "pom.xml", pom)
                     (source / "JupiterTest.java").write_text(
                         'class JupiterTest { @org.junit.jupiter.api.Test void runs() {} }')
                     (source / "VintageTest.java").write_text(
                         'public class VintageTest { @org.junit.Test public void runs() {} }')
                     base = ["mvn", "-B", "-ntp", "-s", settings, "-gs", settings,
-                            "-f", str(pom), "-Dmaven.repo.local=" + str(repository)]
+                            "-f", str(pom), "-Dmaven.repo.local=" + str(repository),
+                            "-Dfixture.junit.version=" + cohort["junit"],
+                            "-Dfixture.surefire.version=" + surefire]
 
                     def run(command, succeeds=True):
                         result = subprocess.run(command, capture_output=True, text=True, timeout=600)
@@ -81,7 +85,7 @@ class TestRuntimePreparationTest(unittest.TestCase):
                     missing = {"2.2": "opentest4j", "kafka-5.0": "junit-platform-launcher"}
                     self.assertRegex(failure, missing.get(line, "surefire-junit-platform|JUnitPlatformProvider"))
                     run([sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"),
-                         "--maven", "mvn", "--repository", str(repository),
+                         "--maven", "mvn", "--settings", settings, "--repository", str(repository),
                          "--artifact", f"org.apache.maven.surefire:surefire-junit-platform:{surefire}",
                          "--artifact", "org.junit.platform:junit-platform-launcher:" + platform,
                          "--artifact", "org.apache.httpcomponents:httpclient:4.4.1"])
@@ -142,6 +146,7 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                  "PROBE_STATUS": str(probe_status), "ARTIFACT_STATUS": str(artifact_status), "MAVEN_SETTINGS": "settings",
                                  "SUITE_MODE": "prepare", "FLINK_LINE": line, "FLINK_VERSION": "test",
                                  "PAIMON_VERSION": "2.0.0", "DELTA_STATUS": str(delta_status),
+                                 "PAIMON_ENFORCER_ARTIFACT": "org.apache.maven.plugins:maven-enforcer-plugin:3.0.0-M1",
                                  "KAFKA_CONNECTOR_VERSION": "5.0.0" if line == "2.2" else "3.2.0",
                                  "DELTA_TEST_POM": "delta fixture/pom.xml", "DELTA_VERSION": "test-delta",
                                  "FLINK_TARGET_PROFILE": "java11-target" if line == "2.2" else "",
@@ -168,6 +173,7 @@ class TestRuntimePreparationTest(unittest.TestCase):
                         self.assertNotIn("--profile", arguments)
                         self.assertNotIn("--projects", arguments)
                         self.assertNotIn("--pom", arguments)
+                        self.assertIn("--offline-first", arguments)
                         artifacts = [arguments[i + 1] for i, value in enumerate(arguments) if value == "--artifact"]
                         expected = ["org.apache.maven.surefire:surefire-junit-platform:" +
                                     ("3.0.0-M5" if line == "1.18" else "3.2.2"),
@@ -175,7 +181,8 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                     ("1.9.1" if line == "1.18" else "1.11.4"),
                                     "org.apache.httpcomponents:httpclient:4.4.1",
                                     "org.apache.paimon:paimon-vfs-hadoop:2.0.0",
-                                    "org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0"]
+                                    "org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0",
+                                    "org.apache.maven.plugins:maven-enforcer-plugin:3.0.0-M1"]
                         if line == "2.2":
                             expected.extend(["org.apache.maven.surefire:surefire-junit-platform:3.2.5",
                                              "org.junit.platform:junit-platform-launcher:1.13.3",

@@ -41,6 +41,20 @@ def recipes(jdk):
          "--artifact", "com.google.protobuf:protobuf-java:2.5.0"],
     ])
     if jdk == "17":
+        runtime_fixture = Path("dev/flink-suite/runtime-fixture")
+        cohorts = json.loads((ROOT / runtime_fixture / "cohorts.json").read_text())
+        fixture_artifacts = set()
+        for cohort in cohorts:
+            result.append(["--pom", (runtime_fixture / "pom.xml").as_posix(), "--resolve-project",
+                           "--offline-first", "--define", "fixture.junit.version=" + cohort["junit"],
+                           "--define", "fixture.surefire.version=" + cohort["surefire"]])
+            fixture_artifacts.update((
+                "org.apache.maven.surefire:surefire-junit-platform:" + cohort["surefire"],
+                "org.junit.platform:junit-platform-launcher:" + cohort["platform"],
+            ))
+        fixture_artifacts.add("org.apache.httpcomponents:httpclient:4.4.1")
+        result.append(["--offline-first", *[option for artifact in sorted(fixture_artifacts)
+                                             for option in ("--artifact", artifact)]])
         result.extend([
             ["--model-only", "--profile", "hudi,flink-1.18,hudi-upstream",
              "--projects", "streamfusion-hudi", "--also-make"],
@@ -124,7 +138,7 @@ def prepare(repository, key, jdk):
     for recipe in recipes(jdk):
         subprocess.run([sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"),
                         "--repository", str(repository), *recipe], cwd=ROOT, check=True)
-        if "--artifact" not in recipe:
+        if not {"--artifact", "--resolve-project"} & set(recipe):
             complete_graph(repository, recipe)
     marker.write_text(json.dumps(metadata(key, jdk), indent=2) + "\n")
 

@@ -1,0 +1,23 @@
+[
+  {
+    "line": "2.2",
+    "surefire": "3.2.2",
+    "junit": "5.11.4",
+    "platform": "1.11.4",
+    "original_opentest": "1.2.0"
+  },
+  {
+    "line": "1.18",
+    "surefire": "3.0.0-M5",
+    "junit": "5.9.1",
+    "platform": "1.9.1",
+    "original_opentest": "1.1.1"
+  },
+  {
+    "line": "kafka-5.0",
+    "surefire": "3.2.5",
+    "junit": "5.13.3",
+    "platform": "1.13.3",
+    "original_opentest": "1.2.0"
+  }
+]

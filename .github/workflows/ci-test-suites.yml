@@ -209,7 +209,8 @@ jobs:
         if: matrix.line == '2.2' && matrix.jdk == '17' && matrix.shard == 1
         run: |
           mvn -B -ntp -f dev/flink-suite/agent/pom.xml package
-          python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'
+          SF_RUNTIME_TEST_MAVEN_SEED="$HOME/.m2/repository" \
+            python3 -m unittest discover -s dev/flink-suite -p 'test_*.py'
           python3 -m dev.tools.tests \
             --exclude test_check_java_bytecode.py \
             --exclude test_module_source_ownership.py \

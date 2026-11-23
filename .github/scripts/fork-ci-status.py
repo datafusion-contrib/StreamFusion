@@ -5,6 +5,7 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
+from http.client import RemoteDisconnected
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -122,7 +123,7 @@ def payload(pr, workflow):
     }
     try:
         result['output']['summary'] += job_summary(fork['full_name'], run)
-    except (URLError, TimeoutError) as error:
+    except (URLError, TimeoutError, RemoteDisconnected) as error:
         if not transient_error(error):
             raise
         print(f'Run {run["id"]}: job details unavailable: {error}', file=sys.stderr)
@@ -202,7 +203,7 @@ def watch(repository, number, deadline, branch):
             pr = api('GET', f'repos/{repository}/pulls/{number}')
             if not mirror(repository, pr, wait_for_runs=time.time() < startup_grace):
                 return
-        except (URLError, TimeoutError) as error:
+        except (URLError, TimeoutError, RemoteDisconnected) as error:
             if not transient_error(error):
                 raise
             print(f'PR #{number}: temporary refresh failure: {error}; retrying', file=sys.stderr)
