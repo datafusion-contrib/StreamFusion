@@ -310,8 +310,9 @@ requeuing the completed check can retain its old conclusion. An active attempt c
 after the exact-head workflow succeeds. This also prevents an earlier successful attempt from
 satisfying the gate during a rerun. A brief startup grace
 allows fork runs to appear after a PR update; absent/disabled workflows still report action
-required. Temporary network/server failures retry within the same deadline; permission failures
-remain visible. Deadline exhaustion fails the watcher without passing unfinished checks.
+required. A closed HTTP response during status refresh is treated like a temporary network
+failure and polling continues within the same deadline. Permission failures remain visible.
+Deadline exhaustion fails the watcher without passing unfinished checks.
 
 The reporter's `actions: write` permission is used to dispatch only this trusted reporter workflow
 with a PR number and deadline; no contributor workflow is dispatched and no personal access token

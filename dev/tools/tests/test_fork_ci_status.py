@@ -2,6 +2,7 @@
 
 import copy
 from contextlib import contextmanager
+from http.client import RemoteDisconnected
 import importlib.util
 import json
 from pathlib import Path
@@ -61,6 +62,13 @@ class ForkCiStatusTest(unittest.TestCase):
             result = STATUS.payload(PR, 'ci.yml')
         self.assertEqual('in_progress', result['status'])
         self.assertNotIn('conclusion', result)
+
+    def test_disconnected_job_details_keep_the_verified_workflow_result(self):
+        with patch.object(STATUS, 'api', return_value={'workflow_runs': [RUN]}), \
+                patch.object(STATUS, 'job_summary', side_effect=RemoteDisconnected()):
+            result = STATUS.payload(PR, 'ci.yml')
+        self.assertEqual('completed', result['status'])
+        self.assertEqual('success', result['conclusion'])
 
     def test_large_job_table_reads_smaller_pages(self):
         job = {'name': 'Runtime', 'status': 'completed', 'conclusion': 'success',
@@ -485,7 +493,7 @@ class ForkCiWatchTest(unittest.TestCase):
         self.assertEqual([110], [call.args[0] for call in clock.sleep.call_args_list])
 
     def test_transient_api_failure_does_not_abandon_the_watch(self):
-        for error in (URLError('connection reset'), TimeoutError('timeout'),
+        for error in (URLError('connection reset'), TimeoutError('timeout'), RemoteDisconnected(),
                       HTTPError('url', 503, 'Unavailable', {}, None),
                       HTTPError('url', 429, 'Too Many Requests', {}, None)):
             with self.subTest(error=error), self.clock() as clock, \
