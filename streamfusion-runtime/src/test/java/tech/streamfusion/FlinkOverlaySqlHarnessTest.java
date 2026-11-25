@@ -1,5 +1,6 @@
 package tech.streamfusion;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static tech.streamfusion.compat.FlinkTestSources.fromData;
 
 import java.util.ArrayList;
@@ -11,6 +12,8 @@ import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.types.Row;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import tech.streamfusion.runtime.common.NativeParity;
 
 class FlinkOverlaySqlHarnessTest {
@@ -19,6 +22,23 @@ class FlinkOverlaySqlHarnessTest {
     parity(
         "SELECT id, OVERLAY(s PLACING t FROM p), OVERLAY(s PLACING t FROM p FOR n),"
             + " OVERLAY(s PLACING 'x' FROM 2 FOR 1) FROM texts");
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 2})
+  void overlayRetainsTheFailureFromAWrappedSuffixIndex(int start) {
+    int suffix = start - 1 + Integer.MAX_VALUE;
+    String message =
+        assertThrows(StringIndexOutOfBoundsException.class, () -> "abc".substring(suffix))
+            .getMessage();
+    NativeFailureParity.run(
+            () -> TextTimeFunctionTestInputs.textRows("abc"),
+            "SELECT OVERLAY(s PLACING 'x' FROM id + " + start + " FOR 2147483647) FROM inputs")
+        .assertFailure(
+            StringIndexOutOfBoundsException.class,
+            message,
+            NativeFailureParity.Phase.ROW_EVALUATION,
+            NativeFailureParity.Route.NATIVE);
   }
 
   @Test

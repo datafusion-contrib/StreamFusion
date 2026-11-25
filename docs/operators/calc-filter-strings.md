@@ -725,33 +725,31 @@ Three character arguments. Mappings use Unicode codepoints, not graphemes. The f
 
 ### BTRIM {#btrim}
 
-One-argument space trimming and two-argument character-set trimming with a literal set retain
-their Rust kernels. Empty sets preserve the input and NULL propagates. Per-row sets use the certified Rust kernel or the retained
-Flink evaluator with the original trim-set representation. The streaming row transpose can
-supply an arbitrary-byte source and its optional Java cache. This also covers the two-argument
-`LTRIM` and `RTRIM` forms. An unverified relational boundary retains fallback because Flink can
-change set behavior after an exchange when the first set character is a space.
+One-argument space trimming and literal character sets run in Rust. Direct per-row trim sets
+use the same native path as SQL `TRIM` on supported streaming inputs. The transpose
+carries the logical bytes and the optional Java cache.
+The two-argument `LTRIM` and `RTRIM` forms share this handling.
 
 ### TRIM {#trim}
 
 The SQL `TRIM([BOTH | LEADING | TRAILING] [characters] FROM s)` forms are native with
 a literal trim set, including Unicode, empty and NULL sets. The default set is the ASCII
 space, not all whitespace. These forms reuse BTRIM/LTRIM/RTRIM's character-set kernels.
-Runtime trim sets use the same source admission as BTRIM, including streaming byte-backed inputs. Direct input/literal operands use
-a Rust batch kernel when every non-null string is ASCII, its original Java UTF-16 cache
-agrees with those bytes. An uncached set starting with a space uses Flink's space-only trim
-rule. A cached empty set leaves the source bytes intact. NULL propagates.
+Runtime trim sets use the same source admission as BTRIM, including streaming byte-backed inputs.
+Direct input/literal operands use a Rust batch kernel with an ASCII fast path. For valid Unicode
+source values, the kernel walks character boundaries and tests membership against the trim set's
+original bytes. For each row, a cached trim set selects the space-only rule only when its Java
+UTF-16 value is exactly one space. A binary-only trim set selects that rule when its first byte
+is a space. A cached empty set leaves the source bytes intact. NULL propagates.
 
-Unicode, uncached empty sets, computed operands and scalar consumers retain a fused generated
-Flink evaluator. The retained evaluator preserves Flink's exception for an uncached empty set.
-Filters and CASE suppress unselected failures, and all-filtered batches skip projections.
-A direct runtime trim projection on a byte-backed streaming source can operate on the whole
-Arrow Binary batch. Space-only trim works on arbitrary bytes. Other sets qualify when the set
-and source bytes are ASCII. The original trim-set cache determines the space-only rule.
-Uncertified batches use the retained Flink evaluator in one batched call, with the original
-bytes and cache. Compositions that fail the byte-compatible Calc check use one generated
-Flink program so expression aliases see the same Java cache. Unverified relational boundaries
-remain subject to the representation gate.
+Both released Calc generators deep-copy each STRING input field and retain its
+Java UTF-16 cache. An uncached empty set has a zero-byte segment and raises an
+arithmetic exception. A trim path that copies a truncated source character can
+raise an index exception. The Rust kernel reproduces these failures on the
+same logical input. A preceding direct casing projection can decode the same
+trim set, and the kernel accounts for that cache change. Filters suppress failures
+on excluded rows and empty batches skip projections. Computed trim sets and
+consumers outside the verified native compositions can invoke generated Flink expressions.
 See the [SQL TRIM release measurements](../benchmarks/scalar-functions.md#runtime-sql-trim).
 
 ### ELT {#elt}
@@ -776,16 +774,15 @@ Character strings use Java form encoding: space becomes `+`, ASCII alphanumerics
 
 Character strings and integer positions, widened to BIGINT without losing bits. Preserves Java UTF-16 positions, length narrowing/overflow, and substring errors. Non-positive or beyond-end starts return the source; zero/negative lengths omit the suffix. Any NULL argument returns NULL.
 
-A standalone final projection keeps the native kernel: split surrogate pairs encode as `?`
-at final output, matching Flink. Direct equality/inequality against a string literal and
-REPLACE with single-character ASCII search/replacement literals have a
-[conditional Rust fusion path](../optimizations/native-string-fusion.md). Producer arguments
-must be direct inputs, literals or losslessly widened integer inputs. The Rust path retains
-UTF-16 cuts until after the consumer; overflowing indexes retain the exact Flink evaluator.
-REPLACE also retains that evaluator for non-ASCII original Java caches or producer literals. Other consumers,
-including LIKE and surrounding CASE expressions, fuse through the batch JVM bridge.
-Sensitive character
-results crossing another relational operator retain the shared STRING identity fallback;
+A standalone final projection and comparisons against string literals run in Rust.
+The kernel uses Flink's UTF-16 positions, accepts dynamic integer bounds, and raises
+the Java substring exception for a wrapped out-of-range suffix index with the worker
+JDK's message. Qualified
+edits, comparisons and replacement expressions keep split surrogates intact
+until the consumer has run. [Native string fusion](../optimizations/native-string-fusion.md)
+describes the allocation-free literal comparison. Other consumers can use generated Flink
+evaluation. Character results crossing another relational operator remain subject to
+the STRING representation gate.
 [issue #519](https://github.com/datafusion-contrib/StreamFusion/issues/519) tracks that boundary.
 
 ### PARSE_URL {#parse_url}
@@ -1824,22 +1821,18 @@ Character input with a dynamic TINYINT, SMALLINT, or INT count. Non-positive cou
 
 STRING, dynamic INT-width length, and literal or dynamic STRING padding. NULL, negative length, or empty padding returns NULL; zero length otherwise returns empty. Flink 2.2.1 counts UTF-16 units, including truncation through surrogate pairs.
 
-Standalone final LPAD/RPAD projections retain their native kernels. Direct equality/inequality
-against a string literal and REPLACE with single-character ASCII search/replacement literals
-have a [conditional Rust fusion path](../optimizations/native-string-fusion.md). This path
-requires direct input/literal producer arguments (or lossless integer widening). Equality
-also handles growth by comparing the literal's UTF-16 length and repeating padding period
-without constructing the padded string. Growing REPLACE maps one whole padding period,
-copies repetitions directly into the final Arrow buffer and consumes the partial UTF-16
-period without encoding split surrogates early. Equality supports
-original Unicode Java caches; REPLACE retains Flink for non-ASCII caches or producer literals. Dynamic consumers,
-other replacements, LIKE, and surrounding CASE expressions retain generated Flink evaluation
-through the batch JVM bridge. Both paths preserve isolated surrogates. For example, padding a supplementary
-character to one UTF-16 unit does not equal the literal `?`, even though both encode to `?`
-at final output. The original input string caches are retained; NULL and all-filtered empty
-batches preserve Flink behavior. A padding result crossing an intermediate relational operator
-retains the shared STRING identity fallback until that boundary can carry the exact value
-([issue #519](https://github.com/datafusion-contrib/StreamFusion/issues/519)).
+Standalone padding projections, qualified comparisons, and replacement expressions run
+in Rust. Comparisons against a literal can check the requested UTF-16 length and
+the repeating padding period without constructing the padded string. Padding a
+supplementary character to one UTF-16 unit produces an isolated surrogate. That
+unit remains distinct from a literal `?` until the result is encoded.
+
+Qualified chains of `LPAD`, `RPAD`, `OVERLAY`, `UPPER`, `LOWER`, and `REPLACE`
+carry the Java UTF-16 alongside the Arrow bytes within native Calc. A later edit
+can join surrogate halves before encoding. `CHAR_LENGTH` traverses the resulting
+bytes as Flink does. Other consumers and intermediate relational boundaries
+remain subject to the STRING representation gate.
+[Issue #519](https://github.com/datafusion-contrib/StreamFusion/issues/519) tracks those boundaries.
 
 ### RPAD {#rpad}
 
@@ -1983,15 +1976,25 @@ producers and further dependent expressions retain their existing routes. The
 [case-length qualification](../benchmarks/scalar-functions.md#length-of-proven-primitive-case-results)
 retains separate stock, actual-prior and native controls.
 
-**Default compatibility path.** Other `UPPER`/`LOWER` calls use Flink-generated scalar
+**Direct text and UTF-16 edits.** Qualified `UPPER` and `LOWER` projections run in Rust
+and carry their optional Java UTF-16 result. ASCII batches case-convert the contiguous
+value buffer and reuse its Arrow validity and offsets when each Java cache fits the
+corresponding byte span. Other batches select the representation for each row. The
+worker supplies its JDK Unicode tables and word-break rules when the operator opens.
+They cover Turkish, Azerbaijani and Lithuanian casing and final sigma under OpenJDK's
+standard word-break providers. The default worker locale is captured at operator open.
+For native string MIN and MAX in captured Flink plans, the stock producer and its
+original Java caches feed the aggregate through a cache-preserving transpose.
+
+**Default compatibility path.** Remaining `UPPER`/`LOWER` calls use Flink-generated scalar
 expressions through the columnar JVM bridge. Original Java UTF-16 caches are passed beside the UTF-8 arguments;
 an absent cache remains a binary-only string. This distinction matters even for ASCII:
 under a Turkish or Azerbaijani runtime JVM locale, Java-backed `LOWER('I')` produces dotless i,
 while Flink's cold binary ASCII path produces ordinary i. Dependent consumers remain in the
-same generated scalar expression. Other projections and the Calc operator remain columnar;
-this is a correctness path, not a pure-Rust case-conversion acceleration. See
-[issue #494](https://github.com/datafusion-contrib/StreamFusion/issues/494) for remaining native
-Unicode coverage. Uncertified `REGEXP_EXTRACT` retains its JVM regex evaluator.
+same generated scalar expression. Other projections and the Calc operator remain columnar.
+[Issue #494](https://github.com/datafusion-contrib/StreamFusion/issues/494) tracks remaining
+classification signatures and expression shapes. Uncertified `REGEXP_EXTRACT` retains its JVM
+regex evaluator.
 
 Each of these also has a faster **pure-Rust** alternative — Rust's own case folding, and the `regex`
 crate — that is **opt-in** under

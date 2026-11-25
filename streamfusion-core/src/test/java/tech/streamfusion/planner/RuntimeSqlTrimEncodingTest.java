@@ -12,15 +12,17 @@ import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
 import org.apache.flink.table.planner.calcite.FlinkTypeSystem;
 import org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.planner.common.CertifiedOp;
+import tech.streamfusion.planner.common.ExpressionKind;
 
 class RuntimeSqlTrimEncodingTest {
   @Test
-  void runtimeDirectionsKeepTheirSymbolInTheHostProgramAndOnlySendStringArguments() throws Exception {
+  void runtimeDirectionsEncodeTheOperationAndBothStringsWithoutAnEvaluator() throws Exception {
     var types = new FlinkTypeFactory(getClass().getClassLoader(), FlinkTypeSystem.INSTANCE);
     var rex = new RexBuilder(types);
     var text = types.createTypeWithNullability(
         types.createSqlType(SqlTypeName.VARCHAR, Integer.MAX_VALUE), true);
-    int operation = 13;
+    int operation = CertifiedOp.TRIM;
     for (var flag : List.of(SqlTrimFunction.Flag.BOTH, SqlTrimFunction.Flag.LEADING,
         SqlTrimFunction.Flag.TRAILING)) {
       var call = rex.makeCall(text, FlinkSqlOperatorTable.TRIM,
@@ -37,10 +39,14 @@ class RuntimeSqlTrimEncodingTest {
       var emit = RexExpression.class.getDeclaredMethod("emit", RexNode.class);
       emit.setAccessible(true);
       assertTrue((Boolean) emit.invoke(encoder, call));
-      assertArrayEquals(new int[] {44, 0, 0}, encoder.kinds());
+      assertArrayEquals(new int[] {
+          ExpressionKind.STRING_TRIM.code(), ExpressionKind.INPUT_REF.code(),
+          ExpressionKind.INPUT_REF.code()}, encoder.kinds());
       assertEquals(2, encoder.childCounts()[0]);
-      assertEquals(operation++, encoder.longs()[2]);
-      assertEquals(List.of("TRIM"), encoder.jvmFunctionCalls(), "The exact host evaluator remains bound");
+      assertArrayEquals(new int[] {operation++, 0, 1}, encoder.payload());
+      assertTrue(encoder.udfBinding().isEmpty());
+      assertEquals(0, encoder.jvmExpressionCount());
+      assertEquals(List.of("TRIM"), encoder.nativeFunctionCalls());
     }
   }
 }

@@ -1,9 +1,8 @@
 # Fuse exact string consumers
 
-Native Calc can consume selected `LPAD`, `RPAD` and `OVERLAY` intermediates entirely in
-Rust, without a JVM callback or an intermediate string allocation. This optimizes
-expressions that already ran through the exact generated Flink evaluator; it does
-not broaden SQL admission or add a configuration switch.
+Native Calc can compare selected `LPAD`, `RPAD`, and `OVERLAY` intermediates in Rust
+without allocating the intermediate string. Other qualified consumers use the
+Arrow bytes and optional Java UTF-16 cache together.
 
 ## Why a UTF-8 kernel alone is insufficient
 
@@ -41,18 +40,24 @@ period proves all repetitions, including a partial final period. These are bulk
 UTF-16 slice comparisons; the repeated padding and complete padded string are
 never allocated. A split surrogate remains a unit throughout the comparison.
 
-Growing LPAD/RPAD under single-ASCII-character REPLACE maps one complete padding
+The certified growing LPAD/RPAD kernel under single-ASCII-character REPLACE maps one complete padding
 period, then copies it in growing chunks directly into the final Arrow value
 buffer. It handles the partial last period with UTF-16 spans and encodes an
 isolated surrogate only after replacement finishes. Output capacity is checked
 before copying. This avoids both the intermediate padded string and a separate
 repeated padding buffer; the final STRING output still has to be written.
 
-This follows Comet's scalar-operand and buffer-reuse discipline, including its
+The borrowed-span kernels follow Comet's scalar-operand and buffer-reuse discipline, including its
 `static_invoke/char_varchar_utils/read_side_padding.rs` implementation. It uses
-released Flink's UTF-16 semantics rather than Spark's code-point rules. No new
-JNI interface, inter-operator string representation or external dependency is
-introduced.
+released Flink's UTF-16 semantics. The same-Calc transport retains the encoded bytes
+and Java code units for later operators.
+
+The standalone overlay kernel can copy intact UTF-8 spans straight into the output
+buffer. With two Java-cached operands it copies contiguous UTF-16 spans into a reused
+buffer, then encodes that buffer once. ASCII units pack directly into bytes. Mixed or
+split spans retain the original surrogate units until encoding. Prepared projection
+benchmarks include the cost of storing both representations.
+[Padding and overlay projection measurements](../benchmarks/scalar-functions-strings.md#padding-and-overlay-projections-with-utf-16-caches)
 
 The planner recognizes these direct consumers:
 
@@ -60,26 +65,24 @@ The planner recognizes these direct consumers:
 |---|---|
 | `producer = literal`, `literal = producer` | Valid string literal, including NULL; Unicode and original Java caches supported |
 | `producer <> literal`, `literal <> producer` | Same conditions as equality |
-| `REPLACE(producer, old, new)` | `old` and `new` are each exactly one ASCII character; producer inputs have no non-ASCII original Java cache or non-ASCII string literal |
+| `REPLACE(producer, old, new)` | A qualified native edit or case result feeds the UTF-16 replacement kernel |
 
 Producer arguments must be direct inputs, valid literals, or lossless integer
 widenings of direct inputs. LPAD/RPAD consumers admit truncation, unchanged
 length and growth, including their NULL, negative-length and empty-padding
-behavior under the cache/literal conditions above. OVERLAY
-admits three or four arguments, preserving UTF-16
-positions and Flink's integer narrowing; overflowing substring cases retain the
-exact evaluator and its exception.
+behavior under the cache/literal conditions above. `OVERLAY` admits three or four
+arguments and preserves UTF-16 positions, integer narrowing, and the exception
+for a wrapped suffix index outside the string.
 
-Certification applies to the batch. If a row needs an unverified path, the whole
-expression uses its retained generated evaluator for that batch. Partially built
-native output is discarded. This is execution inside native Calc, not a planner
-fallback to a stock Calc. `jvmFunctions` in EXPLAIN describes the retained option
-and does not count actual callbacks.
+Qualified padding comparisons against literals and `OVERLAY` comparisons with
+provably safe literal indexes use the allocation-free kernel. Dynamic `OVERLAY`
+indexes and the other qualified consumers can use the Arrow representation that
+retains both bytes and optional UTF-16. Cached and byte-backed inputs select the
+matching representation for each value.
 
-Dynamic comparison targets remain on the exact evaluator: a producer can decode
-its input and change the Java cache visible through an alias in the consumer.
-Other REPLACE operands, LIKE, surrounding CASE expressions and more complex
-producer arguments also retain exact generated evaluation. Inter-operator STRING
+An input reference as a comparison target can observe a Java cache populated
+by the producer through an alias. Those comparisons and unsupported
+surrounding expressions retain exact generated evaluation. Inter-operator STRING
 identity remains a separate fallback tracked in
 [issue #519](https://github.com/datafusion-contrib/StreamFusion/issues/519).
 [Issue #521](https://github.com/datafusion-contrib/StreamFusion/issues/521) tracks

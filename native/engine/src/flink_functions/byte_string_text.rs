@@ -1,4 +1,4 @@
-use arrow::array::{Array, ArrayRef, BinaryArray, Int32Array, StringArray};
+use arrow::array::{Array, ArrayRef, BinaryArray, BinaryBuilder, Int32Array, StringArray};
 use arrow::datatypes::DataType;
 use datafusion::common::{
     cast::{as_binary_array, as_string_array},
@@ -25,9 +25,51 @@ pub(crate) fn position_function(mut inputs: Vec<DataType>) -> ScalarUDF {
     super::udf("flink_position_bytes", inputs, DataType::Int32, position)
 }
 
+pub(crate) fn space_trim_function(operation: i64) -> ScalarUDF {
+    use crate::expression_protocol::scalar_op;
+    let (name, trim): (_, fn(&[ArrayRef]) -> Result<ArrayRef>) = match operation {
+        scalar_op::LTRIM_WHITESPACE => ("flink_ltrim_space_bytes", space_trim::<true, false>),
+        scalar_op::RTRIM_WHITESPACE => ("flink_rtrim_space_bytes", space_trim::<false, true>),
+        _ => ("flink_btrim_space_bytes", space_trim::<true, true>),
+    };
+    super::udf(name, vec![DataType::Binary], DataType::Binary, trim)
+}
+
+fn space_trim<const LEADING: bool, const TRAILING: bool>(args: &[ArrayRef]) -> Result<ArrayRef> {
+    let input = as_binary_array(&args[0])?;
+    let offsets = input.value_offsets();
+    let mut output =
+        BinaryBuilder::with_capacity(input.len(), (offsets[input.len()] - offsets[0]) as usize);
+    for value in input.iter() {
+        let Some(value) = value else {
+            output.append_null();
+            continue;
+        };
+        let start = if LEADING {
+            value
+                .iter()
+                .position(|&byte| byte != b' ')
+                .unwrap_or(value.len())
+        } else {
+            0
+        };
+        let remaining = &value[start..];
+        let end = if TRAILING {
+            remaining
+                .iter()
+                .rposition(|&byte| byte != b' ')
+                .map_or(0, |index| index + 1)
+        } else {
+            remaining.len()
+        };
+        output.append_value(&remaining[..end]);
+    }
+    Ok(Arc::new(output.finish()))
+}
+
 /// Build an Arrow text view only after checking both the backing buffer and the row boundaries.
 /// A byte sequence split across two rows is malformed even when the concatenated buffer is valid.
-fn utf8_view(input: &BinaryArray) -> Option<StringArray> {
+pub(super) fn utf8_view(input: &BinaryArray) -> Option<StringArray> {
     let offsets = input.value_offsets();
     let end = offsets[offsets.len() - 1] as usize;
     let values = input.values().slice_with_length(0, end);
@@ -55,13 +97,13 @@ pub(crate) fn mark_invalid_utf8(input: &BinaryArray, invalid: &mut [bool]) {
     }
 }
 
-enum TextColumn<'a> {
+pub(super) enum TextColumn<'a> {
     Utf8(&'a StringArray),
     Validated(StringArray),
     Mixed(&'a BinaryArray),
 }
 
-enum TextValue<'a> {
+pub(super) enum TextValue<'a> {
     Utf8(&'a str),
     Malformed(&'a [u8]),
 }
@@ -71,7 +113,7 @@ impl<'a> TextColumn<'a> {
         utf8_view(input).map_or(Self::Mixed(input), Self::Validated)
     }
 
-    fn new(input: &'a ArrayRef) -> Result<Self> {
+    pub(super) fn new(input: &'a ArrayRef) -> Result<Self> {
         if input.data_type() == &DataType::Binary {
             Ok(Self::binary(as_binary_array(input)?))
         } else {
@@ -79,7 +121,7 @@ impl<'a> TextColumn<'a> {
         }
     }
 
-    fn get(&self, row: usize) -> Option<TextValue<'_>> {
+    pub(super) fn get(&self, row: usize) -> Option<TextValue<'_>> {
         match self {
             Self::Utf8(text) => text_at(text, row),
             Self::Validated(text) => text_at(text, row),
@@ -160,7 +202,7 @@ fn position(args: &[ArrayRef]) -> Result<ArrayRef> {
 }
 
 impl<'a> TextValue<'a> {
-    fn as_bytes(&self) -> &'a [u8] {
+    pub(super) fn as_bytes(&self) -> &'a [u8] {
         match self {
             Self::Utf8(text) => text.as_bytes(),
             Self::Malformed(bytes) => bytes,
@@ -174,14 +216,18 @@ fn flink_char_starts(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
     let mut offset = 0;
     std::iter::from_fn(move || {
         let start = offset;
-        offset += match *bytes.get(offset)? {
-            0xc2..=0xdf => 2,
-            0xe0..=0xef => 3,
-            0xf0..=0xf7 => 4,
-            _ => 1,
-        };
+        offset += flink_char_width(*bytes.get(offset)?);
         Some(start)
     })
+}
+
+pub(super) fn flink_char_width(first: u8) -> usize {
+    match first {
+        0xc2..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf7 => 4,
+        _ => 1,
+    }
 }
 
 #[cfg(test)]

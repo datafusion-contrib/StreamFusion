@@ -192,6 +192,30 @@
     {
       "name": "STRING_COMPARISON",
       "code": 49
+    },
+    {
+      "name": "STRING_FUSION",
+      "code": 50
+    },
+    {
+      "name": "REPRESENTED_STRING_CASE",
+      "code": 51
+    },
+    {
+      "name": "REPRESENTED_STRING_EDIT",
+      "code": 52
+    },
+    {
+      "name": "REPRESENTED_STRING_LENGTH",
+      "code": 53
+    },
+    {
+      "name": "REPRESENTED_STRING_COMPARISON",
+      "code": 54
+    },
+    {
+      "name": "STRING_TRIM",
+      "code": 55
     }
   ],
   "reservedNodeKinds": [

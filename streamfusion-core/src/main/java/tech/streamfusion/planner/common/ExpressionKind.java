@@ -49,7 +49,13 @@ public enum ExpressionKind {
   ZONED_EXTRACT(45),
   COLLECTION_CAST(46),
   DECIMAL_IF(47),
-  STRING_COMPARISON(49);
+  STRING_COMPARISON(49),
+  STRING_FUSION(50),
+  REPRESENTED_STRING_CASE(51),
+  REPRESENTED_STRING_EDIT(52),
+  REPRESENTED_STRING_LENGTH(53),
+  REPRESENTED_STRING_COMPARISON(54),
+  STRING_TRIM(55);
 
   private final int code;
 
@@ -109,6 +115,12 @@ public enum ExpressionKind {
       case 46: return COLLECTION_CAST;
       case 47: return DECIMAL_IF;
       case 49: return STRING_COMPARISON;
+      case 50: return STRING_FUSION;
+      case 51: return REPRESENTED_STRING_CASE;
+      case 52: return REPRESENTED_STRING_EDIT;
+      case 53: return REPRESENTED_STRING_LENGTH;
+      case 54: return REPRESENTED_STRING_COMPARISON;
+      case 55: return STRING_TRIM;
       default: throw new IllegalArgumentException("Unknown ExpressionKind code: " + code);
     }
   }

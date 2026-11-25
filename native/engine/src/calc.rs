@@ -474,11 +474,19 @@ impl CalcExpression {
                 let payload = self.payload[root];
                 let byte_string = match ExpressionKind::from_code(self.kinds[root]) {
                     Some(ExpressionKind::Call) => {
-                        matches!(payload, scalar_op::CONCAT | scalar_op::CONCAT_WS)
+                        matches!(
+                            payload,
+                            scalar_op::CONCAT
+                                | scalar_op::CONCAT_WS
+                                | scalar_op::TRIM_WHITESPACE
+                                | scalar_op::LTRIM_WHITESPACE
+                                | scalar_op::RTRIM_WHITESPACE
+                        )
                     }
                     Some(ExpressionKind::CertifiedBuiltin) => (certified_op::TRIM
                         ..=certified_op::RTRIM)
                         .contains(&self.longs[payload as usize + 2]),
+                    Some(ExpressionKind::StringTrim) => true,
                     _ => false,
                 };
                 if byte_string {
@@ -770,7 +778,7 @@ mod row_udf_tests {
 /// Compiles an encoded Calc (optional condition + projection trees) into a reusable handle, released
 /// with `closeCalcExpression`.
 #[no_mangle]
-pub extern "system" fn Java_tech_streamfusion_Native_createCalcExpression<'local>(
+pub extern "system" fn Java_tech_streamfusion_Native_createCalcExpressionHandle<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
     kinds: JIntArray<'local>,

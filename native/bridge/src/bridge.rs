@@ -40,6 +40,37 @@ impl FlinkException {
         }
     }
 
+    pub fn string_index_out_of_bounds(begin: i32, length: usize, legacy_substring: bool) -> Self {
+        let message = if legacy_substring {
+            let index = if begin < 0 {
+                i64::from(begin)
+            } else {
+                length as i64 - i64::from(begin)
+            };
+            format!("String index out of range: {index}")
+        } else {
+            format!("begin {begin}, end {length}, length {length}")
+        };
+        Self {
+            class: "java/lang/StringIndexOutOfBoundsException",
+            message,
+        }
+    }
+
+    pub fn arithmetic(message: String) -> Self {
+        Self {
+            class: "java/lang/ArithmeticException",
+            message,
+        }
+    }
+
+    pub fn index_out_of_bounds() -> Self {
+        Self {
+            class: "java/lang/IndexOutOfBoundsException",
+            message: String::new(),
+        }
+    }
+
     pub fn null_pointer(message: String) -> Self {
         Self {
             class: "java/lang/NullPointerException",

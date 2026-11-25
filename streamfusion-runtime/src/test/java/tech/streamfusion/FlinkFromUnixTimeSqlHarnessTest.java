@@ -125,6 +125,7 @@ class FlinkFromUnixTimeSqlHarnessTest {
     org.junit.jupiter.api.Assertions.assertTrue(comparison.nativeRun().fallbackReasons().isEmpty());
     String plan = comparison.nativeRun().plan();
     org.junit.jupiter.api.Assertions.assertTrue(plan.contains("jvmFunctions=[]"), plan);
+    org.junit.jupiter.api.Assertions.assertFalse(plan.contains("jvmExpressions="), plan);
     org.junit.jupiter.api.Assertions.assertTrue(plan.contains("nativeFunctions=["), plan);
   }
 

@@ -954,6 +954,103 @@ callback control took 306.55 [195.77-394.72] ns/row. The previous StreamFusion p
 used stock Flink for these inputs. The prepared test starts with validated Arrow text
 and excludes the adaptive input scan and perimeter conversions.
 
+### Runtime trim without a registered evaluator
+
+On Linux x86-64 with Flink 1.18.1, OpenJDK 17, and a release Rust build with
+mimalloc, `sql_trim` evaluated 65,536 prepared rows per trial in 1,024-row
+batches. Each engine used the same 64-byte corpus and BOTH direction. The
+driver used eight warmups and nine measured trials. The native program used
+the runtime-trim expression directly. The callback column times generated
+Flink evaluation from Native Calc, the previous certified path for this Unicode corpus.
+
+| Corpus | Stock Flink | JVM callback | Native runtime trim |
+|---|---:|---:|---:|
+| ASCII, binary only | 275.16 [256.84–307.81] | 392.88 [378.82–426.26] | 18.50 [18.10–30.82] |
+| Unicode, binary only | 238.55 [213.65–255.73] | 366.10 [339.83–435.37] | 42.51 [41.05–46.30] |
+| Unicode, Java cached | 213.93 [197.55–246.91] | 419.24 [409.23–463.50] | 54.31 [53.04–58.43] |
+
+Values show median [minimum–maximum] nanoseconds per row. The timer covers
+the native trim expression on prepared batches. The row transpose and output
+conversion are outside the measurement.
+
+### Native casing on byte-backed and Java-cached strings
+
+The release benchmark compares the Rust case projections with stock generated Flink
+and the previous generated evaluator invoked through Native Calc. Tests on Linux x86-64
+used Flink 1.18.1, OpenJDK 17, release Rust with mimalloc, and 65,536 prepared rows
+per trial in 1,024-row batches. The corpus has roughly 64 bytes per value and a
+NULL every eleventh row. The mixed corpus supplies Java UTF-16 caches for alternating
+rows. The driver rotates engine order across eight warmups and nine measured trials.
+
+| Expression | Corpus | Stock Flink | Previous StreamFusion | Native case |
+|---|---|---:|---:|---:|
+| `UPPER` | ASCII, bytes only | 128.23 [118.47–163.26] | 217.27 [189.53–254.26] | 7.43 [7.02–9.26] |
+| `UPPER` | ASCII, mixed | 122.26 [118.88–165.79] | 273.25 [217.21–289.16] | 31.40 [30.27–32.62] |
+| `UPPER` | Unicode, mixed | 300.64 [291.54–324.31] | 477.10 [444.61–552.37] | 280.49 [276.81–288.33] |
+| `LOWER` | ASCII, bytes only | 201.08 [187.83–243.04] | 287.93 [265.90–331.61] | 7.90 [7.02–9.66] |
+| `LOWER` | ASCII, mixed | 155.70 [147.82–190.08] | 307.85 [253.98–340.60] | 32.07 [30.56–35.17] |
+| `LOWER` | Unicode, mixed | 921.00 [886.42–966.90] | 1107.59 [1058.95–1146.32] | 637.03 [627.42–644.11] |
+
+Values are median [minimum–maximum] nanoseconds per row. The driver verifies
+the complete result from Native Calc against the prior evaluator before timing.
+The prepared timers exclude operator setup and both perimeter conversions.
+
+```sh
+cd native
+cargo build --locked --release -p streamfusion --no-default-features --features mimalloc --example sql_case_projection
+SF_NATIVE_BENCH_CLASSPATH="$TEST_CLASSPATH" SF_NATIVE_LIB_DIR="$NATIVE_LIB_DIR" \
+  target/release/examples/sql_case_projection upper ascii mixed 64 1024 64 8 9
+```
+
+`TEST_CLASSPATH` includes the runtime benchmark classes and the selected released
+Flink test dependencies. Select `upper` or `lower`, `ascii` or `unicode`, and
+`cold` or `mixed` for the first three arguments.
+
+### Padding and overlay projections with UTF-16 caches
+
+The `string_fusion` projection mode compares released Flink 1.18.1 and two
+production Calc programs. The previous program uses the original native projection
+opcode and returns UTF-8. The new program also emits the original Java UTF-16,
+including isolated surrogate units for later expressions. The driver verifies the
+complete encoded output of both native programs before timing them.
+
+On Linux x86-64 with an Intel i7-12650H, OpenJDK 17 and release Rust with mimalloc,
+each trial processes 65,536 prepared rows in 1,024-row batches. The fixture uses
+nominal 64-byte ASCII or CJK strings, runtime indexes, and NULL on every seventh
+source row. Engine order rotates across eight warmups and nine measured trials.
+Timings include computation, result allocation, and consumption on prepared
+inputs. They exclude operator setup, Arrow export and the row transposes.
+
+| Expression | Source and pattern representation | Stock Flink | Previous UTF-8 output | Native with UTF-16 |
+|---|---|---:|---:|---:|
+| `LPAD` | ASCII, bytes only | 157.63 [142.94–199.97] | 16.20 [15.77–16.95] | 69.65 [66.82–74.19] |
+| `LPAD` | ASCII, Java cached | 106.50 [94.59–146.30] | 16.47 [15.94–18.70] | 67.57 [64.45–72.63] |
+| `LPAD` | CJK, bytes only | 196.08 [166.56–225.54] | 30.52 [30.16–33.36] | 118.96 [116.12–136.12] |
+| `LPAD` | CJK, Java cached | 91.91 [88.33–130.40] | 31.11 [29.72–33.97] | 67.67 [65.29–71.57] |
+| `RPAD` | ASCII, bytes only | 146.59 [131.96–190.24] | 17.32 [16.29–20.45] | 71.73 [67.69–81.83] |
+| `RPAD` | ASCII, Java cached | 95.44 [89.29–133.09] | 16.36 [16.11–16.69] | 64.60 [63.65–71.27] |
+| `RPAD` | CJK, bytes only | 180.17 [158.12–217.50] | 30.38 [29.67–31.15] | 118.02 [115.61–199.25] |
+| `RPAD` | CJK, Java cached | 95.36 [87.39–135.12] | 30.29 [29.52–31.98] | 65.96 [65.64–69.26] |
+| `OVERLAY` | ASCII, bytes only | 167.63 [161.94–202.98] | 24.38 [23.86–25.70] | 69.40 [67.88–74.42] |
+| `OVERLAY` | ASCII, Java cached | 110.76 [98.74–140.75] | 24.29 [23.80–24.77] | 69.33 [67.01–73.49] |
+| `OVERLAY` | CJK, bytes only | 280.90 [235.15–292.26] | 59.19 [56.64–62.17] | 128.17 [126.27–138.57] |
+| `OVERLAY` | CJK, Java cached | 159.90 [144.72–204.72] | 57.89 [56.90–63.14] | 80.96 [77.21–88.19] |
+
+Values are median [minimum–maximum] nanoseconds per row. The new path is
+1.36–2.42× faster than stock across these prepared medians. UTF-16 materialization
+costs 1.40–4.30× relative to the original UTF-8-only projection. Literal
+comparisons can still use the allocation-free span kernel.
+
+```sh
+cd native
+cargo build --locked --release -p streamfusion --no-default-features --features mimalloc --example string_fusion
+SF_NATIVE_BENCH_CLASSPATH="$TEST_CLASSPATH" SF_NATIVE_LIB_DIR="$NATIVE_LIB_DIR" \
+  target/release/examples/string_fusion 22 ascii 64 true 1024 64 8 9 all 0 false projection
+```
+
+Use `20` for LPAD, `21` for RPAD, or `22` for OVERLAY. The second argument
+selects `ascii` or `cjk` and the fourth sets whether Java caches are present.
+
 ### Complete byte-backed string jobs
 
 On Apple M4, Flink 2.2.1/JDK 17.0.17 and release Rust with mimalloc, the three jobs each

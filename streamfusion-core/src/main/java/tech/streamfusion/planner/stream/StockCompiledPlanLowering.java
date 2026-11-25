@@ -154,18 +154,24 @@ final class StockCompiledPlanLowering {
       String json =
           FlinkPlanCompat.createJsonObjectWriter(planner.createSerdeContext())
               .writeValueAsString(original);
+      var representedCaseCalcs = new HashSet<Integer>();
       for (JsonNode node : reader.readTree(json).path("nodes")) {
-        definitions.put(node.path("id").intValue(), node);
+        int id = node.path("id").intValue();
+        definitions.put(id, node);
         if (node.path("type").asText().startsWith("stream-exec-calc")) {
           RexNode[] projections =
               reader.forType(RexNode[].class).readValue(node.path("projection"));
           if (Arrays.stream(projections).anyMatch(JsonStringIdentity::containsSensitiveString))
             return original;
+          if (Arrays.stream(projections).anyMatch(JsonStringIdentity::containsRepresentedCase))
+            representedCaseCalcs.add(id);
         }
       }
       collectUids(original.getRootNodes());
       ExecNodeGraph copy = reader.forType(ExecNodeGraph.class).readValue(json);
       retainStringComparisonInputs(copy.getRootNodes());
+      // Captured stock producers give string extrema the original caches through their transpose.
+      if (!stringComparisonInputs.containsAll(representedCaseCalcs)) return original;
       List<ExecNode<?>> roots = new ArrayList<>();
       for (ExecNode<?> root : copy.getRootNodes()) roots.add(lower(root));
       Set<ExecNode<?>> loweredNodes = Collections.newSetFromMap(new IdentityHashMap<>());

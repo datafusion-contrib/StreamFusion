@@ -381,6 +381,138 @@ pub(crate) fn build_expr(
                 .collect();
             crate::flink_functions::string_comparison::function(payload[node], types).call(args)
         }
+        ExpressionKind::StringFusion => {
+            let count = child_counts[node] as usize;
+            let mut children = Vec::with_capacity(count * 2);
+            for _ in 0..count {
+                children.push(build_expr(
+                    schema,
+                    kinds,
+                    payload,
+                    child_counts,
+                    longs,
+                    doubles,
+                    strings,
+                    cursor,
+                ));
+            }
+            append_string_caches(schema, &mut children, count);
+            crate::flink_functions::string_fusion::literal_comparison(payload[node], count)
+                .call(children)
+        }
+        ExpressionKind::RepresentedStringCase => {
+            let mut children = vec![build_expr(
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
+            )];
+            append_string_caches(schema, &mut children, 1);
+            if child_counts[node] == 2 {
+                children.push(build_expr(
+                    schema,
+                    kinds,
+                    payload,
+                    child_counts,
+                    longs,
+                    doubles,
+                    strings,
+                    cursor,
+                ));
+            } else {
+                children.push(logical_lit(ScalarValue::Boolean(Some(false))));
+            }
+            crate::flink_functions::jdk_case::represented_case(longs.get(arg..)).call(children)
+        }
+        ExpressionKind::RepresentedStringEdit => {
+            let count = child_counts[node] as usize;
+            let mut children = Vec::with_capacity(count * 2);
+            for _ in 0..count {
+                children.push(build_expr(
+                    schema,
+                    kinds,
+                    payload,
+                    child_counts,
+                    longs,
+                    doubles,
+                    strings,
+                    cursor,
+                ));
+            }
+            append_string_caches(schema, &mut children, count);
+            crate::flink_functions::string_fusion::represented_edit(payload[node], count)
+                .call(children)
+        }
+        ExpressionKind::RepresentedStringLength => {
+            let string = build_expr(
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
+            );
+            let bytes = datafusion::functions::core::expr_fn::get_field(string, "utf8");
+            build_typed_call(schema, scalar_op::CHAR_LENGTH, vec![bytes])
+        }
+        ExpressionKind::RepresentedStringComparison => {
+            let children = (0..2)
+                .map(|_| {
+                    build_expr(
+                        schema,
+                        kinds,
+                        payload,
+                        child_counts,
+                        longs,
+                        doubles,
+                        strings,
+                        cursor,
+                    )
+                })
+                .collect();
+            crate::flink_functions::string_fusion::represented_comparison(payload[node])
+                .call(children)
+        }
+        ExpressionKind::StringTrim => {
+            let literal =
+                ExpressionKind::from_code(kinds[*cursor]) == Some(ExpressionKind::LitString);
+            let mut operands: Vec<_> = (0..2)
+                .map(|_| {
+                    build_expr(
+                        schema,
+                        kinds,
+                        payload,
+                        child_counts,
+                        longs,
+                        doubles,
+                        strings,
+                        cursor,
+                    )
+                })
+                .collect();
+            append_string_caches(schema, &mut operands, 1);
+            if child_counts[node] == 3 {
+                operands.push(build_expr(
+                    schema,
+                    kinds,
+                    payload,
+                    child_counts,
+                    longs,
+                    doubles,
+                    strings,
+                    cursor,
+                ));
+            } else {
+                operands.push(logical_lit(ScalarValue::Boolean(Some(false))));
+            }
+            crate::flink_functions::certified::trim::function(payload[node], literal).call(operands)
+        }
         ExpressionKind::ZonedExtract => crate::flink_functions::calendar::zoned(
             strings[arg].as_deref().expect("calendar zone history"),
         )
@@ -439,19 +571,7 @@ pub(crate) fn build_expr(
                     certified_op::SHA2_RUNTIME => 0, // SHA2 hashes bytes without consulting decoded string caches.
                     _ => count,
                 };
-                for index in 0..cache_count {
-                    let cache = if let datafusion::logical_expr::Expr::Column(column) =
-                        &children[index]
-                    {
-                        let position = schema.index_of(&column.name).ok();
-                        position
-                            .and_then(|position| expression_string_cache_position(schema, position))
-                            .map(|i| datafusion::prelude::col(schema.field(i).name()))
-                    } else {
-                        None
-                    };
-                    children.push(cache.unwrap_or_else(|| logical_lit(ScalarValue::Null)));
-                }
+                append_string_caches(schema, &mut children, cache_count);
             }
             datafusion::logical_expr::ScalarUDF::new_from_impl(function).call(children)
         }
@@ -661,6 +781,25 @@ pub(crate) fn build_expr(
     }
 }
 
+fn append_string_caches(
+    schema: &SchemaRef,
+    children: &mut Vec<datafusion::prelude::Expr>,
+    count: usize,
+) {
+    for index in 0..count {
+        let cache = if let datafusion::logical_expr::Expr::Column(column) = &children[index] {
+            schema
+                .index_of(&column.name)
+                .ok()
+                .and_then(|position| expression_string_cache_position(schema, position))
+                .map(|i| datafusion::prelude::col(schema.field(i).name()))
+        } else {
+            None
+        };
+        children.push(cache.unwrap_or_else(|| logical_lit(ScalarValue::Null)));
+    }
+}
+
 /// The Arrow type for a cast target code (mirrors the JVM encoder's widening cast targets).
 pub(crate) fn cast_data_type(code: usize) -> DataType {
     match CastTarget::from_code(code as i64)
@@ -691,6 +830,9 @@ fn build_typed_call(
             | scalar_op::CONCAT_WS
             | scalar_op::POSITION
             | scalar_op::TO_BASE64
+            | scalar_op::TRIM_WHITESPACE
+            | scalar_op::LTRIM_WHITESPACE
+            | scalar_op::RTRIM_WHITESPACE
     ) {
         let schema = DFSchema::try_from(Arc::clone(schema)).expect("byte-string input schema");
         let types: Vec<_> = args
@@ -710,6 +852,11 @@ fn build_typed_call(
                 scalar_op::TO_BASE64 => {
                     crate::flink_functions::function(scalar_op::TO_BASE64_BINARY, args.len())
                         .expect("binary TO_BASE64")
+                }
+                scalar_op::TRIM_WHITESPACE
+                | scalar_op::LTRIM_WHITESPACE
+                | scalar_op::RTRIM_WHITESPACE => {
+                    crate::flink_functions::byte_string_text::space_trim_function(op)
                 }
                 _ => unreachable!("matched byte-string function"),
             };
@@ -3243,6 +3390,61 @@ mod certified_builtin_tests {
     }
 
     #[test]
+    fn ascii_case_uses_cache_state_without_a_jvm() {
+        use streamfusion_bridge::string_cache::{
+            string_cache_array, string_cache_field, JavaStringCacheColumn,
+        };
+        let cache = string_cache_array([None, None, Some(&[65, 122][..]), None]);
+        let input = RecordBatch::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("s", DataType::Utf8, true),
+                string_cache_field(0, cache.data_type().clone()),
+            ])),
+            vec![
+                Arc::new(StringArray::from(vec![
+                    Some("skip"),
+                    Some("Ii"),
+                    Some("By"),
+                    None,
+                ])),
+                cache,
+            ],
+        )
+        .unwrap()
+        .slice(1, 3);
+        for (upper, cold, cached) in [(1, "II", "AZ"), (0, "ii", "az")] {
+            let mut calc = CalcExpression {
+                kinds: vec![ExpressionKind::RepresentedStringCase as i64, 0],
+                payload: vec![0, 0],
+                child_counts: vec![1, 0],
+                longs: vec![upper, 1, 0, 0], // mode, mapping length, break rules length, locale
+                doubles: vec![],
+                strings: vec![],
+                projection_roots: vec![0],
+                condition_root: -1,
+                output_names: vec!["v".into()],
+                compiled: None,
+            };
+            let result = calc.evaluate(input.clone());
+            let value = result
+                .column(0)
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .unwrap();
+            assert_eq!(
+                value.column(0).as_ref(),
+                &StringArray::from(vec![Some(cold), Some(cached), None])
+            );
+            let output_cache = JavaStringCacheColumn::new(value.column(1));
+            assert!(output_cache.value(0).is_none());
+            assert_eq!(
+                output_cache.value(1),
+                Some(cached.encode_utf16().collect::<Vec<_>>().as_slice())
+            );
+        }
+    }
+
+    #[test]
     fn runtime_sql_trim_executes_each_direction_without_a_jvm() {
         let schema = Arc::new(Schema::new(vec![
             Field::new("set", DataType::Utf8, true),
@@ -3256,18 +3458,24 @@ mod certified_builtin_tests {
                     Some("ab"),
                     None,
                     Some("ab"),
+                    Some("中🙂"),
                 ])),
                 Arc::new(StringArray::from(vec![
                     Some("unused"),
                     Some("abXYZba"),
                     Some("XYZ"),
                     None,
+                    Some("中🙂XYZ🙂中"),
                 ])),
             ],
         )
         .unwrap()
-        .slice(1, 3);
-        for (operation, expected) in [(13, "XYZ"), (14, "XYZba"), (15, "abXYZ")] {
+        .slice(1, 4);
+        for (operation, ascii, unicode) in [
+            (certified_op::TRIM, "XYZ", "XYZ"),
+            (certified_op::LTRIM, "XYZba", "XYZ🙂中"),
+            (certified_op::RTRIM, "abXYZ", "中🙂XYZ"),
+        ] {
             let mut calc = CalcExpression {
                 kinds: vec![44, 0, 0],
                 payload: vec![0, 0, 1],
@@ -3282,7 +3490,7 @@ mod certified_builtin_tests {
             };
             assert_eq!(
                 calc.evaluate(input.clone()).column(0).as_ref(),
-                &StringArray::from(vec![Some(expected), None, None])
+                &StringArray::from(vec![Some(ascii), None, None, Some(unicode)])
             );
             assert_eq!(calc.evaluate(input.slice(0, 0)).num_rows(), 0);
         }

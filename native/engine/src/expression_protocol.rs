@@ -51,6 +51,12 @@ pub(crate) enum ExpressionKind {
     CollectionCast = 46,
     DecimalIf = 47,
     StringComparison = 49,
+    StringFusion = 50,
+    RepresentedStringCase = 51,
+    RepresentedStringEdit = 52,
+    RepresentedStringLength = 53,
+    RepresentedStringComparison = 54,
+    StringTrim = 55,
 }
 
 impl ExpressionKind {
@@ -104,6 +110,12 @@ impl ExpressionKind {
             46 => Self::CollectionCast,
             47 => Self::DecimalIf,
             49 => Self::StringComparison,
+            50 => Self::StringFusion,
+            51 => Self::RepresentedStringCase,
+            52 => Self::RepresentedStringEdit,
+            53 => Self::RepresentedStringLength,
+            54 => Self::RepresentedStringComparison,
+            55 => Self::StringTrim,
             _ => return None,
         })
     }

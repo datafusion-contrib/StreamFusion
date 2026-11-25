@@ -80,6 +80,7 @@ mod integer_printf;
 pub(crate) mod integer_string;
 mod is_json;
 mod java_timsort;
+pub(crate) mod jdk_case;
 mod json_array;
 mod json_container;
 mod json_exists;

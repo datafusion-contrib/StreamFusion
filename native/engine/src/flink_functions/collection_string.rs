@@ -240,13 +240,18 @@ impl<'a> Strings<'a> {
 }
 
 pub(super) fn represented_type() -> DataType {
+    represented_type_for(DataType::Utf8)
+}
+
+pub(super) fn represented_type_for(bytes: DataType) -> DataType {
+    let mut metadata =
+        std::collections::HashMap::from([("streamfusion.nested-string".into(), "1".into())]);
+    if bytes == DataType::Binary {
+        metadata.insert("streamfusion.logical_string".into(), "1".into());
+    }
     DataType::Struct(
         vec![
-            Field::new("utf8", DataType::Utf8, true).with_metadata(
-                [("streamfusion.nested-string".into(), "1".into())]
-                    .into_iter()
-                    .collect(),
-            ),
+            Field::new("utf8", bytes, true).with_metadata(metadata),
             Field::new(
                 "java",
                 DataType::List(Arc::new(Field::new("unit", DataType::UInt16, false))),
@@ -256,6 +261,50 @@ pub(super) fn represented_type() -> DataType {
         ]
         .into(),
     )
+}
+
+pub(super) fn represented_values(bytes: ArrayRef, cache: Option<ListArray>) -> Result<ArrayRef> {
+    let DataType::Struct(fields) = represented_type_for(bytes.data_type().clone()) else {
+        unreachable!()
+    };
+    let nulls = bytes.nulls().cloned();
+    let len = bytes.len();
+    let cache: ArrayRef = cache.map_or_else(
+        || arrow::array::new_null_array(fields[1].data_type(), len),
+        |cache| Arc::new(cache),
+    );
+    Ok(Arc::new(StructArray::try_new(
+        fields,
+        vec![bytes, cache, Arc::new(Int8Array::from(vec![0; len]))],
+        nulls,
+    )?))
+}
+
+/// The byte field of the scalar STRING carrier used by representation-aware expressions.
+pub(super) fn represented_byte_type(value: &DataType) -> Option<&DataType> {
+    let DataType::Struct(fields) = value else {
+        return None;
+    };
+    let first = fields.first()?;
+    if (2..=3).contains(&fields.len())
+        && first.name() == "utf8"
+        && matches!(first.data_type(), DataType::Utf8 | DataType::Binary)
+        && first
+            .metadata()
+            .get("streamfusion.nested-string")
+            .is_some_and(|v| v == "1")
+        && (first.data_type() != &DataType::Binary
+            || first
+                .metadata()
+                .get("streamfusion.logical_string")
+                .is_some_and(|v| v == "1"))
+        && fields[1].name() == "java"
+        && matches!(fields[1].data_type(), DataType::List(_))
+    {
+        Some(first.data_type())
+    } else {
+        None
+    }
 }
 
 pub(super) fn split() -> ScalarUDF {

@@ -114,15 +114,28 @@ class FlinkByteStringConcatSqlHarnessTest {
   @ParameterizedTest
   @ValueSource(
       strings = {
+        "SELECT UPPER(s) AS v FROM src",
         "SELECT LOWER(CONCAT(s, '!')) AS v FROM src WHERE id <> -1",
         "SELECT LOWER(s) AS v FROM timed_src",
         "SELECT TRIM(s) AS v FROM src",
+        "SELECT LTRIM(s) AS v FROM src",
+        "SELECT RTRIM(s) AS v FROM src",
+        "SELECT LPAD(s, 5, 'x') AS v FROM src",
+        "SELECT RPAD(s, 5, 'x') AS v FROM src",
+        "SELECT OVERLAY(s PLACING t FROM id FOR 1) AS v FROM src"
+      })
+  void nativeStringsKeepTheirByteSemanticsWithoutAnEvaluator(String sql) throws Exception {
+    assertEquals(run(sql, false), run(sql, true));
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
         "SELECT REPLACE(s, 'a', 'é') AS v FROM src",
         "SELECT CONCAT(TO_BASE64(t), REPLACE(s, 'a', 'b')) AS v FROM src",
         "SELECT REPEAT(s, 2) AS v FROM src",
         "SELECT REVERSE(s) AS v FROM src WHERE id % 10 NOT IN (1, 2)",
         "SELECT SPLIT_INDEX(s, 'a', 0) AS v FROM src",
-        "SELECT LPAD(s, 5, 'x') AS v FROM src WHERE id % 10 NOT IN (1, 2)",
         "SELECT REGEXP_REPLACE(s, 'a', 'x') AS v FROM src",
         "SELECT s AS v FROM src WHERE s LIKE 'a%'",
         "SELECT CONCAT(s, '!') AS v FROM src WHERE s = 'abc'",
@@ -136,16 +149,26 @@ class FlinkByteStringConcatSqlHarnessTest {
   @ValueSource(strings = {"id % 20 = 0", "id % 10 IN (4, 6, 8)"})
   void runtimeTrimSetsUseByteBatches(String predicate) throws Exception {
     String sql = "SELECT TRIM(BOTH delim FROM s) AS v FROM src WHERE " + predicate;
-    assertEquals(run(sql, false), run(sql, Route.BYTE_TRIM, Result.STRING));
+    assertEquals(run(sql, false), run(sql, Route.NATIVE, Result.STRING));
   }
 
   @Test
-  void composedTrimKeepsOneEvaluatorForTheSharedStringCache() throws Exception {
+  void literalTrimSetUsesByteBatches() throws Exception {
+    String sql = "SELECT TRIM(BOTH 'a中' FROM s) AS v FROM src WHERE id % 10 NOT IN (1, 2)";
+    assertEquals(run(sql, Route.HOST, Result.STRING), run(sql, Route.NATIVE, Result.STRING));
+    String truncated = "SELECT TRIM(BOTH 'a中' FROM s) AS v FROM src WHERE id = 1";
+    assertEquals(IndexOutOfBoundsException.class, outcome(truncated, Route.HOST));
+    assertEquals(outcome(truncated, Route.HOST), outcome(truncated, Route.NATIVE));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"LOWER(delim)", "LPAD(delim, 6, s)", "OVERLAY(delim PLACING s FROM 1)"})
+  void composedTrimObservesTheCachePopulatedByNativeStrings(String producer) throws Exception {
     String sql =
-        "SELECT LOWER(delim) AS original, TRIM(BOTH delim FROM t) AS v FROM src "
+        "SELECT " + producer + " AS original, TRIM(BOTH delim FROM t) AS v FROM src "
             + "WHERE id % 20 = 8 AND t IS NOT NULL";
     assertEquals(run(sql, Route.HOST, Result.PASSTHROUGH),
-        run(sql, Route.EXACT, Result.PASSTHROUGH));
+        run(sql, Route.NATIVE, Result.PASSTHROUGH));
   }
 
   @ParameterizedTest
@@ -157,9 +180,9 @@ class FlinkByteStringConcatSqlHarnessTest {
   }
 
   @Test
-  void seededTextFilterKeepsOneGeneratedEvaluatorAcrossBatches() throws Exception {
+  void seededTextFilterRetainsItsSequenceAcrossByteBatches() throws Exception {
     String sql = "SELECT LOWER(s) AS v FROM src WHERE RAND(42) < 0.5";
-    assertEquals(run(sql, false), run(sql, Route.EXACT, Result.STRING));
+    assertEquals(run(sql, false), run(sql, true));
   }
 
   @ParameterizedTest
@@ -172,7 +195,13 @@ class FlinkByteStringConcatSqlHarnessTest {
   @Test
   void truncatedRuntimeTrimRetainsTheFlinkFailure() {
     String sql = "SELECT TRIM(BOTH delim FROM s) AS v FROM src WHERE id = 2";
-    assertEquals(outcome(sql, Route.HOST), outcome(sql, Route.BYTE_TRIM));
+    assertEquals(outcome(sql, Route.HOST), outcome(sql, Route.NATIVE));
+  }
+
+  @Test
+  void coldEmptyTrimSetMatchesFlinksCopiedInput() {
+    String sql = "SELECT TRIM(BOTH delim FROM s) AS v FROM src WHERE id = 1";
+    assertEquals(outcome(sql, Route.HOST), outcome(sql, Route.NATIVE));
   }
 
   private static Object outcome(String sql, Route route) {
@@ -273,8 +302,6 @@ class FlinkByteStringConcatSqlHarnessTest {
     HOST,
     NATIVE,
     ADAPTIVE,
-    EXACT,
-    BYTE_TRIM,
     JVM_CALLBACK
   }
 
@@ -304,15 +331,18 @@ class FlinkByteStringConcatSqlHarnessTest {
       var table = source(metrics, timed);
       table.createTemporarySystemFunction("emit_bytes", EmitBytes.class);
       var scan = route == Route.HOST ? null : NativePlanner.install(table);
-      if (route == Route.NATIVE || route == Route.ADAPTIVE || route == Route.EXACT
-          || route == Route.BYTE_TRIM) {
+      if (route == Route.NATIVE || route == Route.ADAPTIVE) {
         String plan = table.explainSql(sql);
         assertTrue(plan.contains("byteStrings="), () -> plan + scan.fallbackReasons());
         assertTrue(plan.contains(nativeOperator), plan);
         assertTrue(plan.contains("RowDataToArrow"), plan);
+        if (route == Route.NATIVE) {
+          assertTrue(plan.contains("jvmFunctions=[]"), plan);
+          assertFalse(plan.contains("jvmExpressions="), plan);
+          assertFalse(plan.contains("onDemandUtf8"), plan);
+          assertFalse(plan.contains("byteBackedFlinkEval"), plan);
+        }
         if (route == Route.ADAPTIVE) assertTrue(plan.contains("onDemandUtf8=[true]"), plan);
-        if (route == Route.EXACT) assertTrue(plan.contains("byteBackedFlinkEval=[true]"), plan);
-        if (route == Route.BYTE_TRIM) assertFalse(plan.contains("onDemandUtf8"), plan);
         if (timed) assertTrue(plan.contains("NativeWatermarkAssigner"), plan);
         if (sql.contains("UNION ALL")) assertTrue(plan.contains("NativeUnion"), plan);
       } else if (route == Route.JVM_CALLBACK) {
@@ -364,13 +394,12 @@ class FlinkByteStringConcatSqlHarnessTest {
         if (timed) {
           RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), "NativeWatermarkAssigner");
         }
-      } else if (route == Route.JVM_CALLBACK || route == Route.BYTE_TRIM) {
+      } else if (route == Route.JVM_CALLBACK) {
         assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
         RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), nativeOperator);
-      } else if (route == Route.ADAPTIVE || route == Route.EXACT) {
+      } else if (route == Route.ADAPTIVE) {
         assertTrue(scan.fallbackReasons().isEmpty(), scan.fallbackReasons().toString());
-        if (route == Route.ADAPTIVE) assertTrue(metrics.counterValue("validatedTextRows") > 0, sql);
-        else assertEquals(0, metrics.counterValue("validatedTextRows"), sql);
+        assertTrue(metrics.counterValue("validatedTextRows") > 0, sql);
         assertTrue(metrics.counterValue("flinkTextRows") > 0, sql);
         RecoveryExecutionMetrics.assertConsumed(metrics.nativeOperators(), nativeOperator);
       }

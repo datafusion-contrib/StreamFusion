@@ -1,6 +1,7 @@
 package tech.streamfusion.planner;
 
 import tech.streamfusion.planner.common.CertifiedOp;
+import tech.streamfusion.planner.common.ScalarOp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -81,6 +82,72 @@ final class NativeStringFusion {
       args.add(i == producerIndex ? nested : references.get(next++));
     }
     return consumer.clone(consumer.getType(), args);
+  }
+
+  boolean isNativeLiteralComparison() {
+    if (operation < CertifiedOp.LPAD_EQUAL || operation > CertifiedOp.OVERLAY_NOT_EQUAL)
+      return false;
+    if (operation != CertifiedOp.OVERLAY_EQUAL && operation != CertifiedOp.OVERLAY_NOT_EQUAL)
+      return true;
+    return safeOverlayBounds(producer.getOperands());
+  }
+
+  static int representedEdit(RexCall call) {
+    var args = call.getOperands();
+    String name = call.getOperator().getName().toUpperCase(Locale.ROOT);
+    if (name.equals("REPLACE") && args.size() == 3
+        && args.stream().allMatch(NativeStringFusion::textOperand))
+      return ScalarOp.REPLACE;
+    if (name.equals("OVERLAY") && (args.size() == 3 || args.size() == 4)
+        && textOperand(args.get(0)) && textOperand(args.get(1))
+        && args.subList(2, args.size()).stream()
+            .allMatch(arg -> SqlTypeFamily.INTEGER.contains(arg.getType()))) return ScalarOp.OVERLAY;
+    if ((name.equals("LPAD") || name.equals("RPAD")) && args.size() == 3
+        && textOperand(args.get(0)) && SqlTypeFamily.INTEGER.contains(args.get(1).getType())
+        && textOperand(args.get(2)))
+      return name.equals("LPAD") ? ScalarOp.LPAD : ScalarOp.RPAD;
+    return -1;
+  }
+
+  static boolean textOperand(RexNode node) {
+    return SqlTypeFamily.CHARACTER.contains(node.getType())
+        && (leaf(node) || RexExpression.isRepresentedString(node) || byteTextResult(node));
+  }
+
+  private static boolean byteTextResult(RexNode node) {
+    if (!(node instanceof RexCall)) return false;
+    var call = (RexCall) node;
+    if (tech.streamfusion.compat.FlinkCompat.scalarFunction(call.getOperator()) != null) return false;
+    switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
+      case "CONCAT":
+      case "CONCAT_WS":
+      case "SUBSTRING":
+      case "SUBSTR":
+      case "LEFT":
+      case "RIGHT":
+      case "REVERSE":
+        return call.getOperands().stream().allMatch(arg -> leaf(arg) || byteTextResult(arg));
+      default:
+        return false;
+    }
+  }
+
+  private static boolean safeOverlayBounds(List<RexNode> args) {
+    if (!(args.get(2) instanceof RexLiteral)) return false;
+    Long start = ((RexLiteral) args.get(2)).getValueAs(Long.class);
+    if (start == null || start <= 0 || start > Integer.MAX_VALUE) return true;
+    if (args.size() == 4) {
+      if (!(args.get(3) instanceof RexLiteral)) return false;
+      Long length = ((RexLiteral) args.get(3)).getValueAs(Long.class);
+      return length == null || (int) (long) length <= Integer.MAX_VALUE - start;
+    }
+    if (!(args.get(1) instanceof RexLiteral)) return false;
+    String replacement = ((RexLiteral) args.get(1)).getValueAs(String.class);
+    return replacement == null || replacement.length() <= Integer.MAX_VALUE - start;
+  }
+
+  String producerName() {
+    return producer.getOperator().getName().toUpperCase(Locale.ROOT);
   }
 
   private static boolean leaf(RexNode node) {

@@ -1,5 +1,7 @@
 //! Production Calc versus its retained JVM evaluator and released generated Flink expressions.
-use arrow::array::{Array, ArrayRef, BooleanArray, Int32Array, Int64Array, StringArray};
+use arrow::array::{
+    Array, ArrayRef, BooleanArray, Int32Array, Int64Array, StringArray, StructArray,
+};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use jni::objects::JValue;
@@ -57,8 +59,38 @@ fn plan(id: i32, operation: i64, certificate: i64, target: &str) -> CalcProgram 
     )
 }
 
+fn projection_plan(operation: i64, represented: bool) -> CalcProgram {
+    let scalar = match operation {
+        20 => 128, // LPAD
+        21 => 129, // RPAD
+        22 => 116, // OVERLAY
+        _ => unreachable!("Unsupported string projection"),
+    };
+    let operands = if operation == 22 {
+        [0, 2, 1]
+    } else {
+        [0, 1, 2]
+    };
+    CalcProgram::new(
+        vec![if represented { 52 } else { 6 }, 0, 0, 0],
+        vec![scalar, operands[0], operands[1], operands[2]],
+        vec![3, 0, 0, 0],
+        vec![],
+        vec![],
+        vec![],
+    )
+}
+
+fn result_values(batch: &RecordBatch) -> &ArrayRef {
+    let value = batch.column(0);
+    value
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .map_or(value, |result| result.column(0))
+}
+
 fn checksum(batch: &RecordBatch) -> i64 {
-    if let Some(values) = batch.column(0).as_any().downcast_ref::<StringArray>() {
+    if let Some(values) = result_values(batch).as_any().downcast_ref::<StringArray>() {
         values
             .iter()
             .map(|value| value.map_or(-1, |s| s.len() as i64))
@@ -88,7 +120,9 @@ fn main() {
     let engine_filter = args.get(9).map_or("all", String::as_str);
     let growth: usize = args.get(10).map_or(0, |s| s.parse().unwrap());
     let matching = args.get(11).is_some_and(|s| s == "true");
+    let projection = args.get(12).is_some_and(|s| s == "projection");
     assert!((20..=28).contains(&operation));
+    assert!(!projection || (20..=22).contains(&operation));
     assert!(growth == 0 || (operation - 20) % 3 != 2);
     let classpath = format!(
         "-Djava.class.path={}",
@@ -207,19 +241,27 @@ fn main() {
     let mut env = vm.attach_current_thread().unwrap();
     let target_java = env.new_string(&target).unwrap();
     let corpus_java = env.new_string(corpus).unwrap();
-    let id = env.call_static_method(
-        class,
-        "register",
-        "(ILjava/lang/String;)I",
-        &[JValue::Int(operation as i32), JValue::Object(&target_java)],
-    );
-    if env.exception_check().unwrap() {
-        env.exception_describe().unwrap();
-    }
-    let id = id.unwrap().i().unwrap();
+    let id = if projection {
+        None
+    } else {
+        let id = env.call_static_method(
+            class,
+            "register",
+            "(ILjava/lang/String;)I",
+            &[JValue::Int(operation as i32), JValue::Object(&target_java)],
+        );
+        if env.exception_check().unwrap() {
+            env.exception_describe().unwrap();
+        }
+        Some(id.unwrap().i().unwrap())
+    };
     env.call_static_method(
         class,
-        "prepare",
+        if projection {
+            "prepareProjection"
+        } else {
+            "prepare"
+        },
         "(ILjava/lang/String;Ljava/lang/String;IZIIZ)V",
         &[
             JValue::Int(operation as i32),
@@ -234,26 +276,37 @@ fn main() {
     )
     .unwrap();
     // Baseline mode is linked against the preceding production library by the comparison driver.
-    let mut prior = plan(
-        id,
-        operation,
-        if engine_filter == "baseline" {
-            operation
-        } else {
-            0
-        },
-        &target,
-    );
+    let mut prior = if let Some(id) = id {
+        plan(
+            id,
+            operation,
+            if engine_filter == "baseline" {
+                operation
+            } else {
+                0
+            },
+            &target,
+        )
+    } else {
+        projection_plan(operation, false)
+    };
     let admitted = !(operation >= 26 && cached && corpus != "ascii");
-    let mut candidate = plan(
-        if admitted { -1 } else { id },
-        operation,
-        operation,
-        &target,
-    );
+    let mut candidate = if let Some(id) = id {
+        plan(
+            if admitted { -1 } else { id },
+            operation,
+            operation,
+            &target,
+        )
+    } else {
+        projection_plan(operation, true)
+    };
     let reference = prior.run(batch.clone());
     if matches!(engine_filter, "all" | "native") {
-        assert_eq!(reference.column(0), candidate.run(batch.clone()).column(0));
+        assert_eq!(
+            result_values(&reference),
+            result_values(&candidate.run(batch.clone()))
+        );
     }
     for trial in 0..warmups + runs {
         for turn in 0..3 {
@@ -288,15 +341,18 @@ fn main() {
                 (start.elapsed().as_nanos(), black_box(digest))
             };
             assert_eq!(digest, checksum(&reference) * loops as i64);
-            println!("fusion,{operation},{corpus},{width},{cached},{batch_rows},{},{trial},{},{},{nanos},{digest},{growth},{matching}",
+            println!("{},{operation},{corpus},{width},{cached},{batch_rows},{},{trial},{},{},{nanos},{digest},{growth},{matching}",
+                if projection { "projection" } else { "fusion" },
                 loops * batch_rows, trial < warmups, ["flink", "previous", if admitted { "native" } else { "retained" }][engine]);
         }
     }
-    env.call_static_method(
-        "tech/streamfusion/operator/NativeUdf",
-        "unregister",
-        "(I)V",
-        &[JValue::Int(id)],
-    )
-    .unwrap();
+    if let Some(id) = id {
+        env.call_static_method(
+            "tech/streamfusion/operator/NativeUdf",
+            "unregister",
+            "(I)V",
+            &[JValue::Int(id)],
+        )
+        .unwrap();
+    }
 }
