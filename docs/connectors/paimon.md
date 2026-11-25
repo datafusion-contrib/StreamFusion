@@ -56,6 +56,13 @@ including when the input has only one Arrow batch. Unexpected retract or update 
 retain Paimon's append-only writer error instead of being discarded during routing.
 Unspecified writer parallelism resolves through Flink's execution environment and configured
 default before the native router assigns channels.
+The append round-robin routing operator inherits its upstream bucket router's parallelism,
+independently of the environment default and any explicit `sink.parallelism`. This preserves
+the forward edge into routing instead of inserting a gather through a default-parallelism
+task. The target writer count still controls channel assignment and the following shuffle;
+writer parallelism and Paimon's commit topology remain unchanged. Both Paimon adapters share
+plan regressions with an environment default of 1, upstream parallelism of 3 or 786, and
+explicit writer counts smaller or larger than the upstream count.
 
 Continuous tails, periodic watermarks and consumer-retention cursors apply to streaming jobs.
 Batch reads retain the other source type, format, option and split-level fallbacks below.

@@ -187,10 +187,12 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
       end = new NativePaimonBucketSink(table, planned.primaryKey).sinkFrom(partitioned);
     } else {
       var assigned =
-          routed.transform(
-              "native-paimon-round-robin-route",
-              BucketedArrowBatchTypeInformation.INSTANCE,
-              new tech.streamfusion.paimon.NativePaimonRoundRobinOperator(writerParallelism));
+          routed
+              .transform(
+                  "native-paimon-round-robin-route",
+                  BucketedArrowBatchTypeInformation.INSTANCE,
+                  new tech.streamfusion.paimon.NativePaimonRoundRobinOperator(writerParallelism))
+              .setParallelism(routed.getParallelism());
       DataStream<BucketedArrowBatch> shuffled =
           FlinkStreamPartitioner.partition(
                   assigned, BucketedArrowBatchChannelComputer.byChannel(), parallelism)

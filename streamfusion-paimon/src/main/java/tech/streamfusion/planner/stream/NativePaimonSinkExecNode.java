@@ -261,10 +261,12 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
       }
       if (table.coreOptions().partitionSinkStrategy() == PartitionSinkStrategy.NONE) {
         var assigned =
-            routed.transform(
-                "native-paimon-round-robin-route",
-                BucketedArrowBatchTypeInformation.INSTANCE,
-                new tech.streamfusion.paimon.NativePaimonRoundRobinOperator(writerParallelism));
+            routed
+                .transform(
+                    "native-paimon-round-robin-route",
+                    BucketedArrowBatchTypeInformation.INSTANCE,
+                    new tech.streamfusion.paimon.NativePaimonRoundRobinOperator(writerParallelism))
+                .setParallelism(routed.getParallelism());
         shuffled =
             FlinkStreamPartitioner.partition(
                     assigned, BucketedArrowBatchChannelComputer.byChannel(), parallelism)
