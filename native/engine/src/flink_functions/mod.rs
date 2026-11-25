@@ -78,6 +78,7 @@ mod instr;
 pub(crate) mod integer_divide;
 mod integer_printf;
 pub(crate) mod integer_string;
+pub(crate) mod jdk_case;
 mod is_json;
 mod java_timsort;
 mod json_array;

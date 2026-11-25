@@ -274,7 +274,12 @@ public class StreamPhysicalNativeCalc extends StreamPhysicalNativeSingleRel
 
   boolean requiresOriginalStringInputs() {
     return usesPairwiseStringComparison()
-        || Arrays.stream(kinds).anyMatch(kind -> kind == ExpressionKind.CERTIFIED_BUILTIN.code());
+        || Arrays.stream(kinds).anyMatch(kind ->
+            kind == ExpressionKind.CERTIFIED_BUILTIN.code()
+                || kind == ExpressionKind.STRING_FUSION.code()
+                || kind == ExpressionKind.REPRESENTED_STRING_CASE.code()
+                || kind == ExpressionKind.REPRESENTED_STRING_EDIT.code()
+                || kind == ExpressionKind.STRING_TRIM.code());
   }
 
   boolean usesPairwiseStringComparison() {

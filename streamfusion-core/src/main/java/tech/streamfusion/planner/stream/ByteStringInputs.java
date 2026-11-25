@@ -243,12 +243,14 @@ final class ByteStringInputs {
     int next = node + 1;
     if (children[node] == 0) return next;
     var arguments = new BitSet();
-    for (int i = 0; i < children[node]; i++)
-      next = markUtf8Inputs(next, kinds, payload, children, input, needed, arguments);
+    for (int i = 0; i < children[node]; i++) {
+      next = markUtf8Inputs(next, kinds, payload, children, input, needed,
+          kind == ExpressionKind.STRING_TRIM && i == 0 ? new BitSet() : arguments);
+    }
     int operation = kind == ExpressionKind.CALL ? payload[node] : -1;
-    if (operation == ScalarOp.CONCAT || operation == ScalarOp.CONCAT_WS) {
+    if (kind == ExpressionKind.STRING_TRIM || returnsByteString(operation)) {
       resultBytes.or(arguments);
-    } else if (kind != ExpressionKind.STRING_COMPARISON && !acceptsByteStringInput(operation)) {
+    } else if (!acceptsByteStringInput(kind, operation)) {
       needed.or(arguments);
     }
     return next;
@@ -297,6 +299,12 @@ final class ByteStringInputs {
       case LIT_TIMESTAMP:
       case LIT_TYPED_NULL:
       case STRING_COMPARISON:
+      case STRING_FUSION:
+      case REPRESENTED_STRING_CASE:
+      case REPRESENTED_STRING_EDIT:
+      case REPRESENTED_STRING_LENGTH:
+      case REPRESENTED_STRING_COMPARISON:
+      case STRING_TRIM:
       case CALL:
       case CAST:
       case CAST_NARROW:
@@ -310,6 +318,7 @@ final class ByteStringInputs {
       case DECIMAL_TRUNCATE:
       case DECIMAL_FLOAT:
       case INTEGER_TO_STRING:
+      case RANDOM:
         break;
       default:
         return null;
@@ -317,20 +326,36 @@ final class ByteStringInputs {
     int operation = kind == ExpressionKind.CALL ? payload[node] : -1;
     int next = node + 1;
     boolean hasByteInput = false;
+    boolean byteTrimSource = false;
     for (int i = 0; i < children[node]; i++) {
       Expression child = visit(next, kinds, payload, children, parameters, input, used);
       if (child == null) return null;
       if (child.byteString
           && !byteTrim
-          && kind != ExpressionKind.STRING_COMPARISON
-          && !acceptsByteStringInput(operation)) return null;
+          && !acceptsByteStringInput(kind, operation)) return null;
       hasByteInput |= child.byteString;
+      if (kind == ExpressionKind.STRING_TRIM && i == 1) byteTrimSource = child.byteString;
       next = child.next;
     }
     boolean byteResult =
-        byteTrim || operation == ScalarOp.FROM_BASE64
-            || (hasByteInput && (operation == ScalarOp.CONCAT || operation == ScalarOp.CONCAT_WS));
+        byteTrim || byteTrimSource || operation == ScalarOp.FROM_BASE64
+            || hasByteInput && returnsByteString(operation);
     return new Expression(next, byteResult);
+  }
+
+  private static boolean acceptsByteStringInput(ExpressionKind kind, int operation) {
+    switch (kind) {
+      case STRING_COMPARISON:
+      case STRING_FUSION:
+      case REPRESENTED_STRING_CASE:
+      case REPRESENTED_STRING_EDIT:
+      case REPRESENTED_STRING_LENGTH:
+      case REPRESENTED_STRING_COMPARISON:
+      case STRING_TRIM:
+        return true;
+      default:
+        return acceptsByteStringInput(operation);
+    }
   }
 
   private static boolean acceptsByteStringInput(int operation) {
@@ -342,6 +367,9 @@ final class ByteStringInputs {
       case ScalarOp.POSITION:
       case ScalarOp.CONCAT:
       case ScalarOp.CONCAT_WS:
+      case ScalarOp.TRIM_WHITESPACE:
+      case ScalarOp.LTRIM_WHITESPACE:
+      case ScalarOp.RTRIM_WHITESPACE:
       case ScalarOp.MD5:
       case ScalarOp.SHA1:
       case ScalarOp.SHA224:
@@ -354,5 +382,11 @@ final class ByteStringInputs {
       default:
         return false;
     }
+  }
+
+  private static boolean returnsByteString(int operation) {
+    return operation == ScalarOp.CONCAT || operation == ScalarOp.CONCAT_WS
+        || operation == ScalarOp.TRIM_WHITESPACE || operation == ScalarOp.LTRIM_WHITESPACE
+        || operation == ScalarOp.RTRIM_WHITESPACE;
   }
 }

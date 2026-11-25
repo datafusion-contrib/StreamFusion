@@ -1,13 +1,387 @@
 //! Consume padding/overlay UTF-16 intermediates before their final UTF-8 encoding.
-use crate::expression_protocol::certified_op;
+use super::byte_string_text::{TextColumn, TextValue};
+use crate::expression_protocol::{certified_op, scalar_op};
 use arrow::array::{
-    Array, ArrayRef, BooleanBuilder, Int32Array, Int64Array, NullBufferBuilder, StringArray,
+    Array, ArrayBuilder, ArrayRef, BooleanBuilder, Int16Array, Int32Array, Int64Array, Int8Array,
+    ListBuilder, NullBufferBuilder, StringArray, StringBuilder, StructArray, UInt16Builder,
 };
 use arrow::buffer::{Buffer, OffsetBuffer, ScalarBuffer};
-use datafusion::common::ScalarValue;
-use datafusion::logical_expr::ColumnarValue;
+use arrow::datatypes::DataType;
+use datafusion::common::{exec_datafusion_err, DataFusionError, Result, ScalarValue};
+use datafusion::logical_expr::{
+    ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
+};
+use std::fmt::Write;
 use std::sync::Arc;
 use streamfusion_bridge::string_cache::JavaStringCacheColumn;
+
+pub(crate) fn literal_comparison(operation: i64, count: usize) -> ScalarUDF {
+    ScalarUDF::new_from_impl(LiteralComparison {
+        operation,
+        count,
+        signature: Signature::any(count * 2, Volatility::Immutable),
+    })
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct LiteralComparison {
+    operation: i64,
+    count: usize,
+    signature: Signature,
+}
+
+impl ScalarUDFImpl for LiteralComparison {
+    fn name(&self) -> &str {
+        "flink_string_literal_comparison"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, _: &[DataType]) -> Result<DataType> {
+        Ok(DataType::Boolean)
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let (operands, caches) = args.args.split_at(self.count);
+        evaluate(self.operation, operands, caches, args.number_rows)
+            .map(ColumnarValue::Array)
+            .ok_or_else(|| exec_datafusion_err!("Invalid operands for native string comparison"))
+    }
+}
+
+pub(crate) fn represented_edit(operation: i64, count: usize) -> ScalarUDF {
+    ScalarUDF::new_from_impl(RepresentedEdit {
+        operation,
+        count,
+        signature: Signature::any(count * 2, Volatility::Immutable),
+    })
+}
+
+pub(crate) fn represented_comparison(operation: i64) -> ScalarUDF {
+    ScalarUDF::new_from_impl(RepresentedComparison {
+        negate: operation == scalar_op::NOT_EQUAL,
+        signature: Signature::any(2, Volatility::Immutable),
+    })
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct RepresentedComparison {
+    negate: bool,
+    signature: Signature,
+}
+
+impl ScalarUDFImpl for RepresentedComparison {
+    fn name(&self) -> &str {
+        "flink_represented_string_comparison"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, _: &[DataType]) -> Result<DataType> {
+        Ok(DataType::Boolean)
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let invalid = || exec_datafusion_err!("Invalid operands for represented string comparison");
+        let left = Strings::new(&args.args[0], None).ok_or_else(invalid)?;
+        let right = Strings::new(&args.args[1], None).ok_or_else(invalid)?;
+        let mut result = BooleanBuilder::with_capacity(args.number_rows);
+        for row in 0..args.number_rows {
+            result.append_option(
+                left.comparison_value(row)
+                    .zip(right.comparison_value(row))
+                    .map(|(left, right)| left.equal(right) ^ self.negate),
+            );
+        }
+        Ok(ColumnarValue::Array(Arc::new(result.finish())))
+    }
+}
+
+struct ComparisonValue<'a> {
+    text: TextValue<'a>,
+    warm: bool,
+    utf16: Option<&'a [u16]>,
+}
+
+impl ComparisonValue<'_> {
+    fn equal(self, other: Self) -> bool {
+        if !self.warm || !other.warm {
+            return self.text.as_bytes() == other.text.as_bytes();
+        }
+        match (self.utf16, other.utf16) {
+            (Some(left), Some(right)) => left == right,
+            (Some(left), None) => matches!(other.text, TextValue::Utf8(right)
+                if left.iter().copied().eq(right.encode_utf16())),
+            (None, Some(right)) => matches!(self.text, TextValue::Utf8(left)
+                if left.encode_utf16().eq(right.iter().copied())),
+            (None, None) => self.text.as_bytes() == other.text.as_bytes(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct RepresentedEdit {
+    operation: i64,
+    count: usize,
+    signature: Signature,
+}
+
+impl ScalarUDFImpl for RepresentedEdit {
+    fn name(&self) -> &str {
+        "flink_represented_string_edit"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, _: &[DataType]) -> Result<DataType> {
+        Ok(super::collection_string::represented_type())
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
+        let (operands, caches) = args.args.split_at(self.count);
+        let invalid = || exec_datafusion_err!("Invalid operands for native string edit");
+        let overlay = self.operation == scalar_op::OVERLAY;
+        let source = Strings::new(&operands[0], caches.first()).ok_or_else(invalid)?;
+        if self.operation == scalar_op::REPLACE {
+            let old = Strings::new(&operands[1], caches.get(1)).ok_or_else(invalid)?;
+            let replacement = Strings::new(&operands[2], caches.get(2)).ok_or_else(invalid)?;
+            return represented_replace(source, old, replacement, args.number_rows);
+        }
+        let pattern_index = if overlay { 1 } else { 2 };
+        let pattern = Strings::new(&operands[pattern_index], caches.get(pattern_index))
+            .ok_or_else(invalid)?;
+        let number = Integers::new(&operands[if overlay { 2 } else { 1 }]).ok_or_else(invalid)?;
+        let length = operands.get(3).map(Integers::new);
+        let length = match length {
+            Some(Some(length)) => Some(length),
+            Some(None) => return Err(invalid()),
+            None => None,
+        };
+        let mut output = JavaStringOutput::new(args.number_rows);
+        let mut text = Vec::new();
+        let mut source_decoded = String::new();
+        let mut pattern_decoded = String::new();
+        for row in 0..args.number_rows {
+            let length = length
+                .as_ref()
+                .map_or(Some(None), |length| length.value(row).map(Some));
+            let Some((((source, pattern), number), length)) = source
+                .value(row, &mut source_decoded)
+                .zip(pattern.value(row, &mut pattern_decoded))
+                .zip(number.value(row))
+                .zip(length)
+            else {
+                output.append(None)?;
+                continue;
+            };
+            text.clear();
+            if overlay {
+                let length = length.unwrap_or_else(|| pattern.len() as i64);
+                if let (Span::Utf16(source), Span::Utf16(pattern)) = (source, pattern) {
+                    if let Some((prefix, suffix)) = overlay_offsets(source.len(), number, length)? {
+                        text.extend_from_slice(&source[..prefix]);
+                        text.extend_from_slice(pattern);
+                        text.extend_from_slice(&source[suffix..]);
+                        output.append(Some(&text))?;
+                    } else {
+                        output.append(Some(source))?;
+                    }
+                    continue;
+                } else {
+                    let text_spans = overlay_spans(source, pattern, number, length)?;
+                    if matches!((source, pattern), (Span::Utf8(_), Span::Utf8(_)))
+                        && output.append_utf8_spans(&text_spans.0, &mut text)?
+                    {
+                        continue;
+                    }
+                    for span in text_spans.0 {
+                        span.append_units(&mut text);
+                    }
+                }
+            } else if number < 0 || pattern.len() == 0 {
+                output.append(None)?;
+                continue;
+            } else {
+                let size = number as usize;
+                super::check_string_capacity(output.cache.values().len(), size)?;
+                pad_units(
+                    source,
+                    pattern,
+                    size,
+                    self.operation == scalar_op::LPAD,
+                    &mut text,
+                );
+            }
+            output.append(Some(&text))?;
+        }
+        output.finish()
+    }
+}
+
+struct JavaStringOutput {
+    cache: ListBuilder<UInt16Builder>,
+    bytes: StringBuilder,
+    encoded: Vec<u8>,
+}
+
+impl JavaStringOutput {
+    fn new(rows: usize) -> Self {
+        let DataType::Struct(fields) = super::collection_string::represented_type() else {
+            unreachable!()
+        };
+        let DataType::List(unit) = fields[1].data_type() else {
+            unreachable!()
+        };
+        let capacity = rows.saturating_mul(32).min(1 << 20);
+        Self {
+            cache: ListBuilder::with_capacity(UInt16Builder::with_capacity(capacity), rows)
+                .with_field(unit.clone()),
+            bytes: StringBuilder::with_capacity(rows, capacity),
+            encoded: Vec::new(),
+        }
+    }
+
+    fn append(&mut self, value: Option<&[u16]>) -> Result<()> {
+        let Some(value) = value else {
+            self.cache.append(false);
+            self.bytes.append_null();
+            return Ok(());
+        };
+        super::check_string_capacity(self.cache.values().len(), value.len())?;
+        self.encoded.clear();
+        if value.iter().all(|&unit| unit < 128) {
+            self.encoded.extend(value.iter().map(|&unit| unit as u8));
+        } else {
+            encode_java_utf16(value, &mut self.encoded);
+        }
+        // SAFETY: ASCII units above and the encoder both produce valid UTF-8.
+        let encoded = unsafe { std::str::from_utf8_unchecked(&self.encoded) };
+        super::check_string_capacity(self.bytes.values_slice().len(), encoded.len())?;
+        self.bytes.append_value(encoded);
+        self.cache.values().append_slice(value);
+        self.cache.append(true);
+        Ok(())
+    }
+
+    fn append_utf8_spans(&mut self, spans: &[Span<'_>], units: &mut Vec<u16>) -> Result<bool> {
+        let length = spans.iter().try_fold(0usize, |length, span| match span {
+            Span::Utf8(value) => length.checked_add(value.len()),
+            _ => None,
+        });
+        let Some(length) = length else {
+            return Ok(false);
+        };
+        super::check_string_capacity(self.bytes.values_slice().len(), length)?;
+        for &span in spans {
+            let Span::Utf8(value) = span else {
+                unreachable!()
+            };
+            self.bytes.write_str(value)?;
+            span.append_units(units);
+        }
+        self.bytes.append_value("");
+        // The completed byte buffer bounds the number of UTF-16 units.
+        self.cache.values().append_slice(units);
+        self.cache.append(true);
+        Ok(true)
+    }
+
+    fn finish(mut self) -> Result<ColumnarValue> {
+        super::collection_string::represented_values(
+            Arc::new(self.bytes.finish()),
+            Some(self.cache.finish()),
+        )
+        .map(ColumnarValue::Array)
+    }
+}
+
+fn encode_java_utf16(mut units: &[u16], encoded: &mut Vec<u8>) {
+    encoded.reserve(units.len().min(1 << 20) * 3);
+    while let Some((&unit, remaining)) = units.split_first() {
+        units = remaining;
+        match unit {
+            0..=0x7f => encoded.push(unit as u8),
+            0x80..=0x7ff => {
+                encoded.extend_from_slice(&[(0xc0 | unit >> 6) as u8, (0x80 | unit & 0x3f) as u8]);
+            }
+            0xd800..=0xdbff if units.first().is_some_and(|low| (0xdc00..=0xdfff).contains(low)) => {
+                let point = 0x10000 + (u32::from(unit - 0xd800) << 10) + u32::from(units[0] - 0xdc00);
+                units = &units[1..];
+                encoded.extend_from_slice(&[
+                    (0xf0 | point >> 18) as u8,
+                    (0x80 | (point >> 12) & 0x3f) as u8,
+                    (0x80 | (point >> 6) & 0x3f) as u8,
+                    (0x80 | point & 0x3f) as u8,
+                ]);
+            }
+            0xd800..=0xdfff => encoded.push(b'?'),
+            _ => encoded.extend_from_slice(&[
+                (0xe0 | unit >> 12) as u8,
+                (0x80 | (unit >> 6) & 0x3f) as u8,
+                (0x80 | unit & 0x3f) as u8,
+            ]),
+        }
+    }
+}
+
+fn represented_replace(
+    source: Strings<'_>,
+    old: Strings<'_>,
+    replacement: Strings<'_>,
+    rows: usize,
+) -> Result<ColumnarValue> {
+    let mut result = JavaStringOutput::new(rows);
+    let mut decoded = [String::new(), String::new(), String::new()];
+    let mut input = [Vec::new(), Vec::new(), Vec::new()];
+    let mut text = Vec::new();
+    for row in 0..rows {
+        let [source_decoded, old_decoded, new_decoded] = &mut decoded;
+        let values = source
+            .value(row, source_decoded)
+            .zip(old.value(row, old_decoded))
+            .zip(replacement.value(row, new_decoded));
+        let Some(((source, old), replacement)) = values else {
+            result.append(None)?;
+            continue;
+        };
+        for (units, value) in input.iter_mut().zip([source, old, replacement]) {
+            units.clear();
+            value.append_units(units);
+        }
+        let [source, old, replacement] = &input;
+        text.clear();
+        if old.is_empty() {
+            for &unit in source {
+                super::check_string_capacity(text.len(), replacement.len() + 1)?;
+                text.extend_from_slice(replacement);
+                text.push(unit);
+            }
+            super::check_string_capacity(text.len(), replacement.len())?;
+            text.extend_from_slice(replacement);
+        } else {
+            let mut rest = source.as_slice();
+            while let Some(position) = rest
+                .windows(old.len())
+                .position(|candidate| candidate == old)
+            {
+                super::check_string_capacity(text.len(), position + replacement.len())?;
+                text.extend_from_slice(&rest[..position]);
+                text.extend_from_slice(replacement);
+                rest = &rest[position + old.len()..];
+            }
+            super::check_string_capacity(text.len(), rest.len())?;
+            text.extend_from_slice(rest);
+        }
+        result.append(Some(&text))?;
+    }
+    result.finish()
+}
 
 #[derive(Clone, Copy)]
 enum Span<'a> {
@@ -28,6 +402,17 @@ mod tests {
     }
     fn number(value: i64) -> ColumnarValue {
         ColumnarValue::Scalar(ScalarValue::Int64(Some(value)))
+    }
+
+    #[test]
+    fn edit_encoding_replaces_only_unpaired_surrogates() {
+        let mut units: Vec<u16> = (0..=u16::MAX).collect();
+        units.extend([0xd800, 0xdc00, 0xdbff, 0xdfff, 0xd800, b'?' as u16, 0xdc00]);
+        let expected: String =
+            char::decode_utf16(units.iter().copied()).map(|unit| unit.unwrap_or('?')).collect();
+        let mut encoded = Vec::new();
+        encode_java_utf16(&units, &mut encoded);
+        assert_eq!(encoded, expected.as_bytes());
     }
 
     #[test]
@@ -335,6 +720,15 @@ mod tests {
 }
 
 impl<'a> Span<'a> {
+    fn append_units(self, output: &mut Vec<u16>) {
+        match self {
+            Self::Utf8(s) if s.is_ascii() => output.extend(s.bytes().map(u16::from)),
+            Self::Utf8(s) => output.extend(s.encode_utf16()),
+            Self::Utf16(units) => output.extend_from_slice(units),
+            Self::Unit(unit) => output.push(unit),
+        }
+    }
+
     fn byte_capacity(self) -> usize {
         match self {
             Self::Utf8(s) => s.len(),
@@ -431,6 +825,77 @@ fn growing_padding_equals(
 
 struct Text<'a>([Span<'a>; 5]);
 
+fn pad_units(
+    source: Span<'_>,
+    pattern: Span<'_>,
+    length: usize,
+    left: bool,
+    output: &mut Vec<u16>,
+) {
+    let source_length = source.len();
+    if length <= source_length {
+        for span in source.split(length).0 {
+            span.append_units(output);
+        }
+        return;
+    }
+    if !left {
+        source.append_units(output);
+    }
+    let needed = length - source_length;
+    let period = pattern.len();
+    let full_units = needed / period * period;
+    if full_units != 0 {
+        let start = output.len();
+        pattern.append_units(output);
+        while output.len() - start < full_units {
+            let copied = output.len() - start;
+            let take = copied.min(full_units - copied);
+            output.extend_from_within(start..start + take);
+        }
+    }
+    for span in pattern.split(needed % period).0 {
+        span.append_units(output);
+    }
+    if left {
+        source.append_units(output);
+    }
+}
+
+fn overlay_spans<'a>(
+    source: Span<'a>,
+    pattern: Span<'a>,
+    start: i64,
+    length: i64,
+) -> Result<Text<'a>> {
+    let Some((prefix, suffix)) = overlay_offsets(source.len(), start, length)? else {
+        return Ok(Text::single(source));
+    };
+    let prefix = source.split(prefix).0;
+    let suffix = source.split(suffix).1;
+    Ok(Text([prefix[0], prefix[1], pattern, suffix[0], suffix[1]]))
+}
+
+fn overlay_offsets(size: usize, start: i64, length: i64) -> Result<Option<(usize, usize)>> {
+    if start <= 0 || start as u64 > size as u64 {
+        return Ok(None);
+    }
+    let start = start as i32;
+    let length = length as i32;
+    let end = if length > 0 && i64::from(start.wrapping_add(length)) <= size as i64 {
+        let offset = start.wrapping_sub(1).wrapping_add(length);
+        if offset < 0 || offset as usize > size {
+            return Err(DataFusionError::External(Box::new(
+                streamfusion_bridge::FlinkException::string_index_out_of_bounds(offset, size),
+            )));
+        }
+        offset as usize
+    } else {
+        size
+    };
+    Ok(Some((start as usize - 1, end)))
+}
+
 impl<'a> Text<'a> {
     fn single(value: Span<'a>) -> Self {
         Self([
@@ -486,7 +951,8 @@ impl<'a> Text<'a> {
 
 enum Strings<'a> {
     Scalar(Option<&'a str>, Option<Vec<u16>>),
-    Column(&'a StringArray, Option<JavaStringCacheColumn<'a>>),
+    Column(TextColumn<'a>, Option<JavaStringCacheColumn<'a>>),
+    Represented(&'a StructArray, TextColumn<'a>, JavaStringCacheColumn<'a>),
 }
 
 impl<'a> Strings<'a> {
@@ -501,6 +967,14 @@ impl<'a> Strings<'a> {
             ),
             ColumnarValue::Scalar(ScalarValue::Null) => Self::Scalar(None, None),
             ColumnarValue::Array(value) => {
+                if super::collection_string::represented_byte_type(value.data_type()).is_some() {
+                    let value = value.as_any().downcast_ref::<StructArray>()?;
+                    return Some(Self::Represented(
+                        value,
+                        TextColumn::new(value.column(0)).ok()?,
+                        JavaStringCacheColumn::new(value.column(1)),
+                    ));
+                }
                 let cache = match cache {
                     Some(ColumnarValue::Array(array))
                         if array.data_type() != &arrow::datatypes::DataType::Null =>
@@ -509,30 +983,59 @@ impl<'a> Strings<'a> {
                     }
                     _ => None,
                 };
-                Self::Column(value.as_any().downcast_ref()?, cache)
+                Self::Column(TextColumn::new(value).ok()?, cache)
             }
             _ => return None,
         })
     }
 
-    fn value(&self, row: usize) -> Option<Span<'_>> {
+    fn value<'b>(&'b self, row: usize, decoded: &'b mut String) -> Option<Span<'b>> {
+        let value = self.comparison_value(row)?;
+        if let Some(units) = value.utf16 {
+            return Some(Span::Utf16(units));
+        }
+        match value.text {
+            TextValue::Utf8(value) => Some(Span::Utf8(value)),
+            TextValue::Malformed(bytes) => {
+                decoded.clear();
+                super::scalar::append_java_utf8(bytes, decoded);
+                Some(Span::Utf8(decoded))
+            }
+        }
+    }
+
+    fn comparison_value(&self, row: usize) -> Option<ComparisonValue<'_>> {
         match self {
-            Self::Scalar(_, Some(units)) => Some(Span::Utf16(units)),
-            Self::Scalar(value, None) => value.map(Span::Utf8),
-            Self::Column(value, _) if value.is_null(row) => None,
-            Self::Column(value, cache) => Some(
-                cache
-                    .as_ref()
-                    .and_then(|cache| cache.value(row))
-                    .map(Span::Utf16)
-                    .unwrap_or_else(|| Span::Utf8(value.value(row))),
-            ),
+            Self::Scalar(value, cache) => Some(ComparisonValue {
+                text: TextValue::Utf8((*value)?),
+                warm: true,
+                utf16: cache.as_deref(),
+            }),
+            Self::Column(value, cache) => {
+                let utf16 = cache.as_ref().and_then(|cache| cache.value(row));
+                Some(ComparisonValue {
+                    text: value.get(row)?,
+                    warm: utf16.is_some(),
+                    utf16,
+                })
+            }
+            Self::Represented(parent, value, cache) if parent.is_valid(row) => {
+                let utf16 = cache.value(row);
+                Some(ComparisonValue {
+                    text: value.get(row)?,
+                    warm: utf16.is_some(),
+                    utf16,
+                })
+            }
+            _ => None,
         }
     }
 }
 
 enum Integers<'a> {
     Scalar(Option<i64>),
+    I8(&'a Int8Array),
+    I16(&'a Int16Array),
     I32(&'a Int32Array),
     I64(&'a Int64Array),
 }
@@ -540,21 +1043,26 @@ enum Integers<'a> {
 impl<'a> Integers<'a> {
     fn new(value: &'a ColumnarValue) -> Option<Self> {
         Some(match value {
+            ColumnarValue::Scalar(ScalarValue::Int8(value)) => Self::Scalar(value.map(i64::from)),
+            ColumnarValue::Scalar(ScalarValue::Int16(value)) => Self::Scalar(value.map(i64::from)),
             ColumnarValue::Scalar(ScalarValue::Int32(value)) => Self::Scalar(value.map(i64::from)),
             ColumnarValue::Scalar(ScalarValue::Int64(value)) => Self::Scalar(*value),
             ColumnarValue::Scalar(ScalarValue::Null) => Self::Scalar(None),
-            ColumnarValue::Array(array)
-                if array.data_type() == &arrow::datatypes::DataType::Int32 =>
-            {
-                Self::I32(array.as_any().downcast_ref()?)
-            }
-            ColumnarValue::Array(array) => Self::I64(array.as_any().downcast_ref()?),
+            ColumnarValue::Array(array) => match array.data_type() {
+                DataType::Int8 => Self::I8(array.as_any().downcast_ref()?),
+                DataType::Int16 => Self::I16(array.as_any().downcast_ref()?),
+                DataType::Int32 => Self::I32(array.as_any().downcast_ref()?),
+                DataType::Int64 => Self::I64(array.as_any().downcast_ref()?),
+                _ => return None,
+            },
             _ => return None,
         })
     }
     fn value(&self, row: usize) -> Option<i64> {
         match self {
             Self::Scalar(value) => *value,
+            Self::I8(value) => (!value.is_null(row)).then(|| i64::from(value.value(row))),
+            Self::I16(value) => (!value.is_null(row)).then(|| i64::from(value.value(row))),
             Self::I32(value) => (!value.is_null(row)).then(|| i64::from(value.value(row))),
             Self::I64(value) => (!value.is_null(row)).then(|| value.value(row)),
         }
@@ -608,10 +1116,12 @@ pub(crate) fn evaluate(
     let target_units: Vec<_> = old.unwrap_or("").encode_utf16().collect();
     let mut booleans = BooleanBuilder::with_capacity(rows);
     let mut output = Output::new(rows);
+    let mut source_decoded = String::new();
+    let mut pattern_decoded = String::new();
     for row in 0..rows {
         let values = source
-            .value(row)
-            .zip(pattern.value(row))
+            .value(row, &mut source_decoded)
+            .zip(pattern.value(row, &mut pattern_decoded))
             .zip(number.value(row));
         let value = if let Some(((source, pattern), number)) = values {
             // Cached Unicode encoding has not beaten the retained Flink evaluator.
@@ -662,26 +1172,7 @@ pub(crate) fn evaluate(
                 .as_ref()
                 .map_or_else(|| Some(pattern.len() as i64), |length| length.value(row))
             {
-                let size = source.len();
-                if number <= 0 || number as u64 > size as u64 {
-                    Some(Text::single(source))
-                } else {
-                    let start = number as i32;
-                    let length = length as i32;
-                    let end = if length > 0 && i64::from(start.wrapping_add(length)) <= size as i64
-                    {
-                        let offset = start.wrapping_sub(1).wrapping_add(length);
-                        if offset < 0 || offset as usize > size {
-                            return None;
-                        }
-                        offset as usize
-                    } else {
-                        size
-                    };
-                    let prefix = source.split(start as usize - 1).0;
-                    let suffix = source.split(end).1;
-                    Some(Text([prefix[0], prefix[1], pattern, suffix[0], suffix[1]]))
-                }
+                Some(overlay_spans(source, pattern, number, length).ok()?)
             } else {
                 None
             }

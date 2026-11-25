@@ -8,11 +8,21 @@ use streamfusion::bench::CalcProgram;
 use streamfusion_bridge::string_cache::{string_cache_array, string_cache_field};
 
 fn program(id: i32, native: bool, operation: i64) -> CalcProgram {
+    if native {
+        return CalcProgram::new(
+            vec![55, 0, 0],
+            vec![operation, 0, 1],
+            vec![2, 0, 0],
+            vec![],
+            vec![],
+            vec![],
+        );
+    }
     CalcProgram::new(
         vec![44, 0, 0],
         vec![0, 0, 1],
         vec![2, 0, 0],
-        vec![i64::from(id), 0, if native { operation } else { 0 }],
+        vec![i64::from(id), 0, 0],
         vec![],
         vec![],
     )

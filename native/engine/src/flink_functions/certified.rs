@@ -9,7 +9,7 @@ use streamfusion_bridge::string_cache::JavaStringCacheColumn;
 
 mod patterns;
 mod printf;
-mod trim;
+pub(crate) mod trim;
 mod url;
 
 pub(super) fn integer_printf(pattern: &str, args: &[ArrayRef], rows: usize) -> Option<ArrayRef> {
@@ -44,10 +44,8 @@ pub(crate) fn evaluate(
         };
         return super::split_index::integer_separator([input, separator, index], caches);
     }
-    if (certified_op::TRIM..=certified_op::RTRIM).contains(&operation)
-        && target == &DataType::Binary
-    {
-        return trim::evaluate_bytes(operation, arrays, caches);
+    if (certified_op::TRIM..=certified_op::RTRIM).contains(&operation) {
+        return trim::evaluate(operation, arrays, caches, target);
     }
     for (index, input) in arrays.iter().enumerate() {
         if let Some(strings) = input.as_any().downcast_ref::<StringArray>() {
@@ -74,7 +72,6 @@ pub(crate) fn evaluate(
         }
         certified_op::PARSE_URL => url::evaluate(arrays),
         certified_op::PRINTF => printf::evaluate(arrays),
-        certified_op::TRIM..=certified_op::RTRIM => trim::evaluate(operation, arrays, caches),
         _ => None,
     }
 }

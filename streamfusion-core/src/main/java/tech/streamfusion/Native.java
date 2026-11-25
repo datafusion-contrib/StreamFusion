@@ -8,6 +8,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Locale;
 import org.slf4j.LoggerFactory;
+import tech.streamfusion.operator.JdkCharacterTable;
+import tech.streamfusion.planner.common.ExpressionKind;
 
 /** Entry point to the native data plane. Holds the methods backed by the Rust library. */
 public final class Native {
@@ -955,7 +957,52 @@ public final class Native {
    * @param conditionRoot the condition tree's root index, or -1 if there is no condition
    * @param outputNames the output column names, in order
    */
-  public static native long createCalcExpression(
+  public static long createCalcExpression(
+      int[] kinds,
+      int[] payload,
+      int[] childCounts,
+      long[] longs,
+      double[] doubles,
+      String[] strings,
+      int[] projectionRoots,
+      int conditionRoot,
+      String[] outputNames) {
+    int caseKind = ExpressionKind.REPRESENTED_STRING_CASE.code();
+    int upperOffset = -1;
+    int lowerOffset = -1;
+    boolean copiedPayload = false;
+    for (int i = 0; i < kinds.length; i++) {
+      if (kinds[i] == ExpressionKind.STRING_TRIM.code()
+          && (payload[i] & (1 << 9)) != 0
+          && org.apache.flink.table.data.binary.BinaryStringData.EMPTY_UTF8.getJavaObject() != null) {
+        if (!copiedPayload) {
+          payload = payload.clone();
+          copiedPayload = true;
+        }
+        payload[i] |= 1 << 10;
+      }
+      if (kinds[i] != caseKind) continue;
+      if (!copiedPayload) {
+        payload = payload.clone();
+        copiedPayload = true;
+      }
+      // The worker supplies metadata at operator open. Rust never asks Java to case a row.
+      boolean upper = payload[i] == -1;
+      int offset = upper ? upperOffset : lowerOffset;
+      if (offset < 0) {
+        offset = longs.length;
+        longs = JdkCharacterTable.appendCaseMappings(longs, upper);
+        if (upper) upperOffset = offset;
+        else lowerOffset = offset;
+      }
+      payload[i] = offset;
+    }
+    return createCalcExpressionHandle(
+        kinds, payload, childCounts, longs, doubles, strings, projectionRoots,
+        conditionRoot, outputNames);
+  }
+
+  private static native long createCalcExpressionHandle(
       int[] kinds,
       int[] payload,
       int[] childCounts,

@@ -22,6 +22,18 @@ class FlinkOverlaySqlHarnessTest {
   }
 
   @Test
+  void overlayRetainsTheFailureFromAWrappedSuffixIndex() {
+    NativeFailureParity.run(
+            () -> TextTimeFunctionTestInputs.textRows("abc"),
+            "SELECT OVERLAY(s PLACING 'x' FROM id + 2 FOR 2147483647) FROM inputs")
+        .assertFailure(
+            StringIndexOutOfBoundsException.class,
+            "begin -2147483648, end 3, length 3",
+            NativeFailureParity.Phase.ROW_EVALUATION,
+            NativeFailureParity.Route.NATIVE);
+  }
+
+  @Test
   void overlayMatchesFlinkAtEverySurrogateBoundary() throws Exception {
     NativeParity.assertParity(
         () -> {

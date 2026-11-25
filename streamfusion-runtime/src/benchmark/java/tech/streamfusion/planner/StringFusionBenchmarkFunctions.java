@@ -37,8 +37,8 @@ public final class StringFusionBenchmarkFunctions {
     return types.toArray(LogicalType[]::new);
   }
 
-  private static FlinkExpressionFunction function(int operation, String target, boolean flattened)
-      throws Exception {
+  private static FlinkExpressionFunction function(
+      int operation, String target, boolean flattened, boolean projection) throws Exception {
     var factory = new JavaTypeFactoryImpl();
     var rex = new RexBuilder(factory);
     var text =
@@ -62,7 +62,7 @@ public final class StringFusionBenchmarkFunctions {
             overlay ? List.of(source, pattern, count) : List.of(source, count, pattern));
     RexNode literal = rex.makeCharLiteral(new NlsString(target, "UTF-8", SqlCollation.IMPLICIT));
     RexNode call =
-        operation >= 26
+        projection ? producer : operation >= 26
             ? rex.makeCall(
                 text,
                 FlinkSqlOperatorTable.REPLACE,
@@ -88,7 +88,7 @@ public final class StringFusionBenchmarkFunctions {
   }
 
   public static int register(int operation, String target) throws Exception {
-    var function = function(operation, target, true);
+    var function = function(operation, target, true, false);
     int[] codes = new int[] {16, 2, 16};
     if ((operation - 20) % 3 == 2) {
       codes[1] = NativeUdf.TYPE_INTERNAL;
@@ -123,8 +123,25 @@ public final class StringFusionBenchmarkFunctions {
       int growth,
       boolean matching)
       throws Exception {
+    prepare(operation, target, corpus, width, cached, count, growth, matching, false);
+  }
+
+  public static void prepareProjection(
+      int operation,
+      String target,
+      String corpus,
+      int width,
+      boolean cached,
+      int count,
+      int growth,
+      boolean matching) throws Exception {
+    prepare(operation, target, corpus, width, cached, count, growth, matching, true);
+  }
+
+  private static void prepare(int operation, String target, String corpus, int width,
+      boolean cached, int count, int growth, boolean matching, boolean projection) throws Exception {
     if (stock != null) stock.close();
-    stock = function(operation, target, false);
+    stock = function(operation, target, false, projection);
     var serializer = new RowDataSerializer(RowType.of(arguments(operation, false)));
     String unit =
         corpus.equals("cjk") ? "\u4e2d\u6587?" : corpus.equals("emoji") ? "\ud83d\ude00?" : "ab?c";

@@ -49,6 +49,7 @@ public final class JsonStringIdentity {
             || call.getOperator().getName().equals("LPAD")
             || call.getOperator().getName().equals("RPAD")
             || call.getOperator().getName().equals("OVERLAY")
+            || RexExpression.isRepresentedCase(call)
             // Runtime charsets include CESU-8, which can return isolated UTF-16 surrogates.
             || call.getOperator().getName().equals("DECODE")
                 && call.getOperands().size() == 2

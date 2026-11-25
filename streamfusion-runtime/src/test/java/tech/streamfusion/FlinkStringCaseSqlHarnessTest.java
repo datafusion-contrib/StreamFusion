@@ -54,15 +54,19 @@ class FlinkStringCaseSqlHarnessTest {
     Locale previous = Locale.getDefault();
     try {
       Locale.setDefault(Locale.forLanguageTag("tr-TR"));
-      NativeParity.assertParity(
+      Supplier<TableEnvironment> cold =
           () -> {
             TableEnvironment tables = environment().get();
             tables.executeSql(
                 "CREATE TEMPORARY TABLE cold (s STRING) WITH ('connector' = 'filesystem', "
                     + "'path' = '" + directory.toUri() + "', 'format' = 'csv')");
             return tables;
-          },
+          };
+      NativeParity.assertParity(
+          cold,
           "SELECT REPLACE(s, 'X', 'Y'), LOWER(s), UPPER(s), LOWER(s) = 'i' FROM cold");
+      NativeParity.assertParity(
+          cold, "SELECT LPAD(s, 3, 'x'), LOWER(s), UPPER(s) FROM cold");
     } finally {
       Locale.setDefault(previous);
     }

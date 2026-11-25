@@ -213,6 +213,10 @@ final class RexExpression implements EncodedExpression {
   private boolean skipMapKeyCaches;
   private boolean javaStringInputs;
   private boolean byteBackedTrimInputs;
+  private final BitSet casedTrimInputs = new BitSet();
+  private final Map<Integer, List<BitSet>> decodedStringInputs = new java.util.HashMap<>();
+  private static final int TRIM_SET_CASED = 1 << 8;
+  private static final int TRIM_SET_SHARED_EMPTY = 1 << 9;
   private boolean pairwiseStringComparisons;
   private String jvmExecutionReason;
   private final Set<String> jvmExpressionDetails = new LinkedHashSet<>();
@@ -263,6 +267,10 @@ final class RexExpression implements EncodedExpression {
   @Override
   public boolean requiresOriginalStringInputs() {
     return writer.containsKind(KIND_CERTIFIED_BUILTIN)
+        || writer.containsKind(ExpressionKind.STRING_FUSION.code())
+        || writer.containsKind(ExpressionKind.REPRESENTED_STRING_CASE.code())
+        || writer.containsKind(ExpressionKind.REPRESENTED_STRING_EDIT.code())
+        || writer.containsKind(ExpressionKind.STRING_TRIM.code())
         || writer.containsKind(ExpressionKind.STRING_COMPARISON.code());
   }
 
@@ -868,6 +876,7 @@ final class RexExpression implements EncodedExpression {
       if (!emit(projection)) {
         return false;
       }
+      recordStringInputDecoding(projection);
     }
     outputNames = calc.getRowType().getFieldNames().toArray(new String[0]);
     return true;
@@ -1764,6 +1773,48 @@ final class RexExpression implements EncodedExpression {
   }
 
   private boolean emitCall(RexCall call) {
+    int trim = nativeTrimOperation(call);
+    if (trim != 0) {
+      var args = call.getOperands();
+      return emitNativeTrim(call, args.get(args.size() == 3 ? 2 : 0), args.get(1), trim);
+    }
+    if (call == projectionRoot && isRepresentedString(call)
+        && (NativeStringFusion.representedEdit(call) != ScalarOp.REPLACE
+            || call.getOperands().stream().anyMatch(RexExpression::isRepresentedString))) {
+      return emitRepresentedString(call);
+    }
+    if ((call.getOperator() == SqlStdOperatorTable.CHAR_LENGTH
+            || call.getOperator() == SqlStdOperatorTable.CHARACTER_LENGTH)
+        && call.getOperands().size() == 1 && isRepresentedString(call.getOperands().get(0))) {
+      add(ExpressionKind.REPRESENTED_STRING_LENGTH.code(), 0, 1);
+      return emitRepresentedString((RexCall) call.getOperands().get(0));
+    }
+    if ((call.getOperator() == SqlStdOperatorTable.CHAR_LENGTH
+            || call.getOperator() == SqlStdOperatorTable.CHARACTER_LENGTH)
+        && call.getOperands().size() == 1 && nativeTrimOperation(call.getOperands().get(0)) != 0) {
+      return emitBuiltinCall(call, ScalarOp.CHAR_LENGTH);
+    }
+    if (canCompareRepresentedStrings(call)) {
+      var literalComparison = NativeStringFusion.match(call);
+      if (literalComparison == null || !literalComparison.isNativeLiteralComparison()) {
+        add(ExpressionKind.REPRESENTED_STRING_COMPARISON.code(),
+            call.getKind() == SqlKind.EQUALS ? ScalarOp.EQUAL : ScalarOp.NOT_EQUAL, 2);
+        for (RexNode operand : call.getOperands()) {
+          if (!emitStringOperand(operand)) return false;
+        }
+        return true;
+      }
+    }
+    if (call.getKind() == SqlKind.CASE && nativeStringPredicateCase(call)) {
+      return emitBuiltinCall(call, ScalarOp.CASE);
+    }
+    if ((call.getKind() == SqlKind.IS_NULL || call.getKind() == SqlKind.IS_NOT_NULL)
+        && call.getOperands().size() == 1
+        && (isRepresentedString(call.getOperands().get(0))
+            || nativeTrimOperation(call.getOperands().get(0)) != 0)) {
+      add(KIND_CALL, call.getKind() == SqlKind.IS_NULL ? ScalarOp.IS_NULL : ScalarOp.IS_NOT_NULL, 1);
+      return emitStringOperand(call.getOperands().get(0));
+    }
     if ((call.getKind() == SqlKind.IS_NOT_DISTINCT_FROM || call.getKind() == SqlKind.IS_DISTINCT_FROM)
         && nativeNullSafeReferences(call)) return emitNullSafeReferences(call);
     if (containsMetadataDependentDecimalRounding(call)) {
@@ -3262,6 +3313,13 @@ final class RexExpression implements EncodedExpression {
   }
 
   private boolean emitTrimSet(RexCall call, int op, int min) {
+    var args = call.getOperands();
+    if (!args.isEmpty() && isCharacter(args.get(0))
+        && (args.size() == 1
+            || args.size() == 2 && args.get(1) instanceof RexLiteral
+                && " ".equals(((RexLiteral) args.get(1)).getValueAs(String.class)))) {
+      return emitSpaceTrim(args.get(0), op);
+    }
     if (call.getOperands().size() == 2 && !(call.getOperands().get(1) instanceof RexLiteral)) {
       return reject(call.getOperator().getName() + " requires a literal trim set");
     }
@@ -4612,6 +4670,13 @@ final class RexExpression implements EncodedExpression {
     NativeStringFusion fusion =
         tryFusion && !decimalProjectionDefaults ? NativeStringFusion.match(call) : null;
     if (fusion != null) {
+      if (fusion.isNativeLiteralComparison()) {
+        if (!validateHostStringInputs(call)) return false;
+        nativeFunctionCalls.add(fusion.producerName());
+        add(ExpressionKind.STRING_FUSION.code(), fusion.operation, fusion.operands.size());
+        for (RexNode operand : fusion.operands) if (!emit(operand)) return false;
+        return true;
+      }
       return emitCertifiedBuiltin(call, fusion.operation, fusion);
     }
     fuseConsumers |= needsExactScalarFunction(call);
@@ -4748,30 +4813,8 @@ final class RexExpression implements EncodedExpression {
                         .getValueAs(String.class)
                         .chars()
                         .anyMatch(c -> c >= 0xd800 && c <= 0xdfff))) return 0;
-    if (isRuntimeSqlTrim(call)) {
-      switch (String.valueOf(((RexLiteral) call.getOperands().get(0)).getValue())) {
-        case "BOTH":
-          return CertifiedOp.TRIM;
-        case "LEADING":
-          return CertifiedOp.LTRIM;
-        case "TRAILING":
-          return CertifiedOp.RTRIM;
-        default:
-          return 0;
-      }
-    }
-    if (isDynamicTrim(call)) {
-      if (call.getOperator().getName().equalsIgnoreCase("BTRIM")
-          && call.getOperator() instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction
-          && ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction) call.getOperator())
-                  .getDefinition()
-              instanceof org.apache.flink.table.functions.BuiltInFunctionDefinition)
-        return CertifiedOp.TRIM;
-      if (call.getOperator() == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.LTRIM)
-        return CertifiedOp.LTRIM;
-      if (call.getOperator() == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.RTRIM)
-        return CertifiedOp.RTRIM;
-    }
+    int trim = isDynamicTrim(call) ? explicitTrimDirection(call) : 0;
+    if (trim != 0) return trim;
     if (call.getKind() == SqlKind.LIKE && call.getOperands().size() == 3) return CertifiedOp.LIKE_WITH_ESCAPE;
     if (call.getKind() == SqlKind.SIMILAR) return CertifiedOp.SIMILAR;
     switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
@@ -4808,6 +4851,183 @@ final class RexExpression implements EncodedExpression {
       default:
         return 0;
     }
+  }
+
+  static boolean isRepresentedCase(RexCall call) {
+    return (call.getOperator() == SqlStdOperatorTable.UPPER
+            || call.getOperator() == SqlStdOperatorTable.LOWER)
+        && call.getOperands().size() == 1
+        && NativeStringFusion.textOperand(call.getOperands().get(0))
+        && !NativeConfig.allowsIncompatible(call.getOperator().getName());
+  }
+
+  static boolean isRepresentedString(RexNode node) {
+    if (!(node instanceof RexCall)) return false;
+    var call = (RexCall) node;
+    return FlinkCompat.scalarFunction(call.getOperator()) == null
+        && (isRepresentedCase(call) || NativeStringFusion.representedEdit(call) >= 0);
+  }
+
+  private boolean emitRepresentedString(RexCall call) {
+    nativeFunctionCalls.add(call.getOperator().getName().toUpperCase(Locale.ROOT));
+    if (isRepresentedCase(call)) {
+      RexNode source = call.getOperands().get(0);
+      var decoded = source instanceof RexInputRef
+          ? decodedStringInputs.get(((RexInputRef) source).getIndex()) : null;
+      add(ExpressionKind.REPRESENTED_STRING_CASE.code(),
+          call.getOperator() == SqlStdOperatorTable.UPPER ? -1 : -2, decoded == null ? 1 : 2);
+      if (!emitStringOperand(source)) return false;
+      if (decoded != null) emitDecodingPredicate(decoded);
+      return true;
+    } else {
+      int edit = NativeStringFusion.representedEdit(call);
+      add(ExpressionKind.REPRESENTED_STRING_EDIT.code(), edit, call.getOperands().size());
+    }
+    for (RexNode operand : call.getOperands()) {
+      if (isRepresentedString(operand)) {
+        if (!emitRepresentedString((RexCall) operand)) return false;
+      } else if (!emit(operand)) return false;
+    }
+    return true;
+  }
+
+  private static boolean isSubstringResult(RexNode value) {
+    if (!(value instanceof RexCall)) return false;
+    var call = (RexCall) value;
+    if (FlinkCompat.scalarFunction(call.getOperator()) != null) return false;
+    switch (call.getOperator().getName().toUpperCase(Locale.ROOT)) {
+      case "LEFT":
+      case "RIGHT":
+      case "SUBSTR":
+      case "SUBSTRING":
+        return call.getOperands().stream()
+            .allMatch(arg -> arg instanceof RexInputRef || arg instanceof RexLiteral);
+      default:
+        return false;
+    }
+  }
+
+  private boolean nativeTrimOperand(RexNode value) {
+    return value instanceof RexInputRef || value instanceof RexLiteral
+        || isRepresentedString(value) || javaStringInputs && isSubstringResult(value)
+        || nativeTrimOperation(value) != 0;
+  }
+
+  private int nativeTrimOperation(RexNode node) {
+    if (!(node instanceof RexCall) || !(byteBackedTrimInputs || javaStringInputs)) return 0;
+    var call = (RexCall) node;
+    int trim = explicitTrimDirection(call);
+    if (trim == 0) return 0;
+    var args = call.getOperands();
+    RexNode set = args.get(1);
+    RexNode source = args.get(args.size() == 3 ? 2 : 0);
+    if (set instanceof RexLiteral
+        && " ".equals(((RexLiteral) set).getValueAs(String.class))
+        && !isRepresentedString(source)) return 0;
+    return nativeTrimOperand(set) && nativeTrimOperand(source) ? trim : 0;
+  }
+
+  private static int explicitTrimDirection(RexCall call) {
+    var args = call.getOperands();
+    if (call.getOperator() == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.TRIM
+        && args.size() == 3 && args.get(0) instanceof RexLiteral
+        && isCharacter(args.get(1)) && isCharacter(args.get(2))) {
+      switch (String.valueOf(((RexLiteral) args.get(0)).getValue())) {
+        case "BOTH": return CertifiedOp.TRIM;
+        case "LEADING": return CertifiedOp.LTRIM;
+        case "TRAILING": return CertifiedOp.RTRIM;
+        default: return 0;
+      }
+    }
+    if (args.size() != 2 || !isCharacter(args.get(0)) || !isCharacter(args.get(1))) return 0;
+    if (call.getOperator().getName().equalsIgnoreCase("BTRIM")
+        && call.getOperator() instanceof org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction
+        && ((org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction) call.getOperator())
+                .getDefinition()
+            instanceof org.apache.flink.table.functions.BuiltInFunctionDefinition)
+      return CertifiedOp.TRIM;
+    if (call.getOperator() == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.LTRIM)
+      return CertifiedOp.LTRIM;
+    if (call.getOperator() == org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable.RTRIM)
+      return CertifiedOp.RTRIM;
+    return 0;
+  }
+
+  private boolean emitNativeTrim(RexCall call, RexNode source, RexNode set, int operation) {
+    nativeFunctionCalls.add(call.getOperator().getName().toUpperCase(Locale.ROOT));
+    int setField = set instanceof RexInputRef ? ((RexInputRef) set).getIndex() : -1;
+    if (setField >= 0 && casedTrimInputs.get(setField)) {
+      operation |= TRIM_SET_CASED;
+    }
+    if (isSubstringResult(set) || nativeTrimOperation(set) != 0
+        || set instanceof RexCall && isRepresentedCase((RexCall) set))
+      operation |= TRIM_SET_SHARED_EMPTY;
+    var decoded = decodedStringInputs.get(setField);
+    add(ExpressionKind.STRING_TRIM.code(), operation, decoded == null ? 2 : 3);
+    if (!emitStringOperand(set) || !emitStringOperand(source)) return false;
+    if (decoded != null) emitDecodingPredicate(decoded);
+    return true;
+  }
+
+  private void recordStringInputDecoding(RexNode projection) {
+    if (!(projection instanceof RexCall)) return;
+    var call = (RexCall) projection;
+    if (FlinkCompat.scalarFunction(call.getOperator()) != null) return;
+    var args = call.getOperands();
+    if (isRepresentedCase(call) && args.get(0) instanceof RexInputRef) {
+      casedTrimInputs.set(((RexInputRef) args.get(0)).getIndex());
+      return;
+    }
+    if (NativeStringFusion.representedEdit(call) < 0
+        || args.stream().anyMatch(arg -> !(arg instanceof RexInputRef)
+            && (!(arg instanceof RexLiteral) || ((RexLiteral) arg).isNull()))) return;
+    var nonNull = new BitSet();
+    for (var arg : args) {
+      if (arg instanceof RexInputRef) nonNull.set(((RexInputRef) arg).getIndex());
+    }
+    // Flink decodes the Java arguments once every operand passes the call's NULL guard.
+    for (var arg : args) {
+      if (arg instanceof RexInputRef && isCharacter(arg)) {
+        var field = ((RexInputRef) arg).getIndex();
+        decodedStringInputs.computeIfAbsent(field, ignored -> new ArrayList<>()).add(nonNull);
+      }
+    }
+  }
+
+  private void emitDecodingPredicate(List<BitSet> clauses) {
+    for (int i = 0; i < clauses.size(); i++) {
+      if (i + 1 < clauses.size()) add(KIND_CALL, ScalarOp.OR, 2);
+      var fields = clauses.get(i);
+      for (int field = fields.nextSetBit(0); field >= 0; field = fields.nextSetBit(field + 1)) {
+        if (fields.nextSetBit(field + 1) >= 0) add(KIND_CALL, ScalarOp.AND, 2);
+        add(KIND_CALL, ScalarOp.IS_NOT_NULL, 1);
+        add(KIND_INPUT_REF, field, 0);
+      }
+    }
+  }
+
+  private boolean emitStringOperand(RexNode operand) {
+    return isRepresentedString(operand) ? emitRepresentedString((RexCall) operand) : emit(operand);
+  }
+
+  private boolean canCompareRepresentedStrings(RexCall call) {
+    var args = call.getOperands();
+    return (call.getKind() == SqlKind.EQUALS || call.getKind() == SqlKind.NOT_EQUALS)
+        && args.size() == 2
+        && args.stream().anyMatch(arg -> isRepresentedString(arg) || nativeTrimOperation(arg) != 0)
+        && args.stream().allMatch(arg -> isRepresentedString(arg) || nativeTrimOperation(arg) != 0
+            || arg instanceof RexLiteral && NativeStringFusion.textOperand(arg));
+  }
+
+  private boolean nativeStringPredicateCase(RexCall call) {
+    var args = call.getOperands();
+    if (args.size() < 3 || args.size() % 2 == 0 || isCharacter(call)) return false;
+    for (int i = 0; i < args.size() - 1; i += 2) {
+      if (!(args.get(i) instanceof RexCall)
+          || !canCompareRepresentedStrings((RexCall) args.get(i))
+          || !(args.get(i + 1) instanceof RexLiteral)) return false;
+    }
+    return args.get(args.size() - 1) instanceof RexLiteral;
   }
 
   private boolean emitCertifiedBuiltin(RexCall call, int operation) {
@@ -5935,8 +6155,18 @@ final class RexExpression implements EncodedExpression {
     if (op < 0) {
       return reject("unsupported TRIM direction");
     }
+    if (" ".equals(trim.getValueAs(String.class))) {
+      return emitSpaceTrim(operands.get(2), op);
+    }
     add(KIND_CALL, op, 2);
     return emit(operands.get(2)) && emit(trim);
+  }
+
+  private boolean emitSpaceTrim(RexNode value, int operation) {
+    int opcode = operation == ScalarOp.TRIM ? ScalarOp.TRIM_WHITESPACE
+        : operation == ScalarOp.LTRIM ? ScalarOp.LTRIM_WHITESPACE : ScalarOp.RTRIM_WHITESPACE;
+    add(KIND_CALL, opcode, 1);
+    return emit(value);
   }
 
   /**
