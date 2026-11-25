@@ -197,6 +197,9 @@ commits and intermediate pushes do not each need a matrix. Until older feature
 branches include this configuration, `[skip ci]` can suppress their push-triggered
 workflows; it does not suppress the lightweight `pull_request_target` reporter.
 
+The Paimon 1 workflow includes the shared append-routing StreamGraph regression, checking
+that routing inherits upstream parallelism while preserving configured writer counts.
+
 Use `--include docs.yml` or `--include paimon1.yml` for applicable checks in the same
 qualification. The launcher requires a clean committed worktree and the exact pushed PR head;
 the first qualification also requires current canonical main to be integrated. It reuses the
