@@ -49,7 +49,6 @@ public final class JsonStringIdentity {
             || call.getOperator().getName().equals("LPAD")
             || call.getOperator().getName().equals("RPAD")
             || call.getOperator().getName().equals("OVERLAY")
-            || RexExpression.isRepresentedCase(call)
             // Runtime charsets include CESU-8, which can return isolated UTF-16 surrogates.
             || call.getOperator().getName().equals("DECODE")
                 && call.getOperands().size() == 2
@@ -58,6 +57,16 @@ public final class JsonStringIdentity {
       return true;
     }
     return call.getOperands().stream().anyMatch(JsonStringIdentity::containsSensitiveString);
+  }
+
+  public static boolean containsRepresentedCase(RexNode expression) {
+    if (expression instanceof RexFieldAccess) {
+      return containsRepresentedCase(((RexFieldAccess) expression).getReferenceExpr());
+    }
+    if (!(expression instanceof RexCall)) return false;
+    var call = (RexCall) expression;
+    return RexExpression.isRepresentedCase(call)
+        || call.getOperands().stream().anyMatch(JsonStringIdentity::containsRepresentedCase);
   }
 
   static boolean containsUnpairedSurrogate(String value) {
@@ -108,7 +117,9 @@ public final class JsonStringIdentity {
         // A decoded cast is Java-backed in Flink; Arrow UTF-8 alone cannot preserve its cache
         // for representation-sensitive downstream comparators. Fused consumers stay in the Calc.
         if (containsCharacter(expression.getType())
-            && (containsSensitiveString(expression) || containsDecodedBinaryCast(expression))) {
+            && (containsSensitiveString(expression)
+                || containsRepresentedCase(expression)
+                || containsDecodedBinaryCast(expression))) {
           if (!forwarding || !preservableJsonValue(expression)) return false;
           calcs.add(node);
         }

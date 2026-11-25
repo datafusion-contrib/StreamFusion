@@ -15,6 +15,9 @@ use std::fmt::Write;
 use std::sync::Arc;
 use streamfusion_bridge::string_cache::JavaStringCacheColumn;
 
+// The Java operator sets this bit when opening a Calc on an older String implementation.
+const LEGACY_OVERLAY_INDEX_MESSAGE: i64 = 1 << 16;
+
 pub(crate) fn literal_comparison(operation: i64, count: usize) -> ScalarUDF {
     ScalarUDF::new_from_impl(LiteralComparison {
         operation,
@@ -53,7 +56,8 @@ impl ScalarUDFImpl for LiteralComparison {
 
 pub(crate) fn represented_edit(operation: i64, count: usize) -> ScalarUDF {
     ScalarUDF::new_from_impl(RepresentedEdit {
-        operation,
+        operation: operation & !LEGACY_OVERLAY_INDEX_MESSAGE,
+        legacy_overlay_index_message: operation & LEGACY_OVERLAY_INDEX_MESSAGE != 0,
         count,
         signature: Signature::any(count * 2, Volatility::Immutable),
     })
@@ -126,6 +130,7 @@ impl ComparisonValue<'_> {
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct RepresentedEdit {
     operation: i64,
+    legacy_overlay_index_message: bool,
     count: usize,
     signature: Signature,
 }
@@ -184,7 +189,12 @@ impl ScalarUDFImpl for RepresentedEdit {
             if overlay {
                 let length = length.unwrap_or_else(|| pattern.len() as i64);
                 if let (Span::Utf16(source), Span::Utf16(pattern)) = (source, pattern) {
-                    if let Some((prefix, suffix)) = overlay_offsets(source.len(), number, length)? {
+                    if let Some((prefix, suffix)) = overlay_offsets(
+                        source.len(),
+                        number,
+                        length,
+                        self.legacy_overlay_index_message,
+                    )? {
                         text.extend_from_slice(&source[..prefix]);
                         text.extend_from_slice(pattern);
                         text.extend_from_slice(&source[suffix..]);
@@ -194,7 +204,13 @@ impl ScalarUDFImpl for RepresentedEdit {
                     }
                     continue;
                 } else {
-                    let text_spans = overlay_spans(source, pattern, number, length)?;
+                    let text_spans = overlay_spans(
+                        source,
+                        pattern,
+                        number,
+                        length,
+                        self.legacy_overlay_index_message,
+                    )?;
                     if matches!((source, pattern), (Span::Utf8(_), Span::Utf8(_)))
                         && output.append_utf8_spans(&text_spans.0, &mut text)?
                     {
@@ -873,8 +889,11 @@ fn overlay_spans<'a>(
     pattern: Span<'a>,
     start: i64,
     length: i64,
+    legacy_index_message: bool,
 ) -> Result<Text<'a>> {
-    let Some((prefix, suffix)) = overlay_offsets(source.len(), start, length)? else {
+    let Some((prefix, suffix)) =
+        overlay_offsets(source.len(), start, length, legacy_index_message)?
+    else {
         return Ok(Text::single(source));
     };
     let prefix = source.split(prefix).0;
@@ -882,7 +901,12 @@ fn overlay_spans<'a>(
     Ok(Text([prefix[0], prefix[1], pattern, suffix[0], suffix[1]]))
 }
 
-fn overlay_offsets(size: usize, start: i64, length: i64) -> Result<Option<(usize, usize)>> {
+fn overlay_offsets(
+    size: usize,
+    start: i64,
+    length: i64,
+    legacy_index_message: bool,
+) -> Result<Option<(usize, usize)>> {
     if start <= 0 || start as u64 > size as u64 {
         return Ok(None);
     }
@@ -892,7 +916,11 @@ fn overlay_offsets(size: usize, start: i64, length: i64) -> Result<Option<(usize
         let offset = start.wrapping_sub(1).wrapping_add(length);
         if offset < 0 || offset as usize > size {
             return Err(DataFusionError::External(Box::new(
-                streamfusion_bridge::FlinkException::string_index_out_of_bounds(offset, size),
+                streamfusion_bridge::FlinkException::string_index_out_of_bounds(
+                    offset,
+                    size,
+                    legacy_index_message,
+                ),
             )));
         }
         offset as usize
@@ -1178,7 +1206,7 @@ pub(crate) fn evaluate(
                 .as_ref()
                 .map_or_else(|| Some(pattern.len() as i64), |length| length.value(row))
             {
-                Some(overlay_spans(source, pattern, number, length).ok()?)
+                Some(overlay_spans(source, pattern, number, length, false).ok()?)
             } else {
                 None
             }

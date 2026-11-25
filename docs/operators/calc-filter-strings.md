@@ -776,7 +776,8 @@ Character strings and integer positions, widened to BIGINT without losing bits. 
 
 A standalone final projection and comparisons against string literals run in Rust.
 The kernel uses Flink's UTF-16 positions, accepts dynamic integer bounds, and raises
-the Java substring exception for a wrapped out-of-range suffix index. Qualified
+the Java substring exception for a wrapped out-of-range suffix index with the worker
+JDK's message. Qualified
 edits, comparisons and replacement expressions keep split surrogates intact
 until the consumer has run. [Native string fusion](../optimizations/native-string-fusion.md)
 describes the allocation-free literal comparison. Other consumers can use generated Flink
@@ -1982,6 +1983,8 @@ corresponding byte span. Other batches select the representation for each row. T
 worker supplies its JDK Unicode tables and word-break rules when the operator opens.
 They cover Turkish, Azerbaijani and Lithuanian casing and final sigma under OpenJDK's
 standard word-break providers. The default worker locale is captured at operator open.
+For native string MIN and MAX in captured Flink plans, the stock producer and its
+original Java caches feed the aggregate through a cache-preserving transpose.
 
 **Default compatibility path.** Remaining `UPPER`/`LOWER` calls use Flink-generated scalar
 expressions through the columnar JVM bridge. Original Java UTF-16 caches are passed beside the UTF-8 arguments;

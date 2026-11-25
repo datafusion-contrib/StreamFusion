@@ -10,6 +10,7 @@ import java.util.Locale;
 import org.slf4j.LoggerFactory;
 import tech.streamfusion.operator.JdkCharacterTable;
 import tech.streamfusion.planner.common.ExpressionKind;
+import tech.streamfusion.planner.common.ScalarOp;
 
 /** Entry point to the native data plane. Holds the methods backed by the Rust library. */
 public final class Native {
@@ -948,6 +949,21 @@ public final class Native {
   /** Returns the row numbers whose selected Arrow Binary strings fail strict UTF-8 validation. */
   public static native int[] invalidUtf8Rows(long inputArray, long inputSchema, int[] columns);
 
+  private static final int LEGACY_OVERLAY_INDEX_MESSAGE = 1 << 16;
+
+  private static final class OverlayIndexMessage {
+    private static final boolean LEGACY = usesLegacySubstringIndexMessage();
+
+    private static boolean usesLegacySubstringIndexMessage() {
+      try {
+        "".substring(-1);
+        return false;
+      } catch (StringIndexOutOfBoundsException error) {
+        return "String index out of range: -1".equals(error.getMessage());
+      }
+    }
+  }
+
   /**
    * Compiles an encoded Calc — an optional condition tree plus the projection trees, sharing one
    * set of pools, with each tree's root in {@code projectionRoots}/{@code conditionRoot} — into a
@@ -972,14 +988,21 @@ public final class Native {
     int lowerOffset = -1;
     boolean copiedPayload = false;
     for (int i = 0; i < kinds.length; i++) {
+      int runtimeFlag = 0;
       if (kinds[i] == ExpressionKind.STRING_TRIM.code()
           && (payload[i] & (1 << 9)) != 0
           && org.apache.flink.table.data.binary.BinaryStringData.EMPTY_UTF8.getJavaObject() != null) {
+        runtimeFlag = 1 << 10;
+      } else if (kinds[i] == ExpressionKind.REPRESENTED_STRING_EDIT.code()
+          && payload[i] == ScalarOp.OVERLAY && OverlayIndexMessage.LEGACY) {
+        runtimeFlag = LEGACY_OVERLAY_INDEX_MESSAGE;
+      }
+      if (runtimeFlag != 0) {
         if (!copiedPayload) {
           payload = payload.clone();
           copiedPayload = true;
         }
-        payload[i] |= 1 << 10;
+        payload[i] |= runtimeFlag;
       }
       if (kinds[i] != caseKind) continue;
       if (!copiedPayload) {
