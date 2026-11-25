@@ -3,6 +3,7 @@ package tech.streamfusion.planner;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.List;
 import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
 import org.apache.calcite.rex.RexBuilder;
@@ -12,6 +13,8 @@ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable;
 import org.junit.jupiter.api.Test;
+import tech.streamfusion.planner.common.ExpressionKind;
+import tech.streamfusion.planner.common.ScalarOp;
 
 class NativeStringFusionTest {
   private final JavaTypeFactoryImpl types = new JavaTypeFactoryImpl();
@@ -39,7 +42,7 @@ class NativeStringFusionTest {
   }
 
   @Test
-  void consumersEncodeFlatArgumentsAndRetainTheExactExpression() {
+  void qualifiedConsumersEncodeNativeExpressionsWithoutEvaluators() {
     for (int kind = 0; kind < 3; kind++) {
       for (int consumer = 0; consumer < 3; consumer++) {
         for (boolean reversed : new boolean[] {false, true}) {
@@ -66,8 +69,20 @@ class NativeStringFusionTest {
           assertEquals(call, fusion.expression(fusion.operands));
           var encoded = RexExpression.encodeProjections(List.of(call), List.of("v"));
           assertNotNull(encoded, call.toString());
-          assertEquals(44, encoded.kinds()[0]);
-          assertEquals(fusion.operation, encoded.longs()[2]);
+          assertTrue(encoded.udfBinding().isEmpty(), call.toString());
+          assertEquals(0, encoded.jvmExpressionCount());
+          if (consumer == 2) {
+            assertEquals(ExpressionKind.REPRESENTED_STRING_EDIT.code(), encoded.kinds()[0]);
+            assertEquals(ScalarOp.REPLACE, encoded.payload()[0]);
+          } else if (kind == 2) {
+            assertEquals(ExpressionKind.REPRESENTED_STRING_COMPARISON.code(), encoded.kinds()[0]);
+            assertTrue(Arrays.stream(encoded.kinds())
+                .anyMatch(op -> op == ExpressionKind.REPRESENTED_STRING_EDIT.code()));
+          } else {
+            assertEquals(ExpressionKind.STRING_FUSION.code(), encoded.kinds()[0]);
+            assertEquals(fusion.operation, encoded.payload()[0]);
+            assertEquals(fusion.operands.size(), encoded.childCounts()[0]);
+          }
         }
       }
     }
@@ -78,7 +93,7 @@ class NativeStringFusionTest {
   }
 
   @Test
-  void dynamicConsumersAndUnverifiedReplacementPatternsRetainExactEvaluation() {
+  void literalFusionRequiresLiteralComparisonsOrSingleAsciiCharacterReplacement() {
     var producer = producer(0, false);
     RexNode dynamic = rex.makeInputRef(producer.getType(), 2);
     assertNull(

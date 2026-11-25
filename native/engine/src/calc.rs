@@ -474,9 +474,14 @@ impl CalcExpression {
                 let payload = self.payload[root];
                 let byte_string = match ExpressionKind::from_code(self.kinds[root]) {
                     Some(ExpressionKind::Call) => {
-                        matches!(payload, scalar_op::CONCAT | scalar_op::CONCAT_WS
-                            | scalar_op::TRIM_WHITESPACE | scalar_op::LTRIM_WHITESPACE
-                            | scalar_op::RTRIM_WHITESPACE)
+                        matches!(
+                            payload,
+                            scalar_op::CONCAT
+                                | scalar_op::CONCAT_WS
+                                | scalar_op::TRIM_WHITESPACE
+                                | scalar_op::LTRIM_WHITESPACE
+                                | scalar_op::RTRIM_WHITESPACE
+                        )
                     }
                     Some(ExpressionKind::CertifiedBuiltin) => (certified_op::TRIM
                         ..=certified_op::RTRIM)

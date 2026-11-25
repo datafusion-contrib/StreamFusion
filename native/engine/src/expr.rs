@@ -402,12 +402,26 @@ pub(crate) fn build_expr(
         }
         ExpressionKind::RepresentedStringCase => {
             let mut children = vec![build_expr(
-                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
             )];
             append_string_caches(schema, &mut children, 1);
             if child_counts[node] == 2 {
                 children.push(build_expr(
-                    schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                    schema,
+                    kinds,
+                    payload,
+                    child_counts,
+                    longs,
+                    doubles,
+                    strings,
+                    cursor,
                 ));
             } else {
                 children.push(logical_lit(ScalarValue::Boolean(Some(false))));
@@ -419,7 +433,14 @@ pub(crate) fn build_expr(
             let mut children = Vec::with_capacity(count * 2);
             for _ in 0..count {
                 children.push(build_expr(
-                    schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                    schema,
+                    kinds,
+                    payload,
+                    child_counts,
+                    longs,
+                    doubles,
+                    strings,
+                    cursor,
                 ));
             }
             append_string_caches(schema, &mut children, count);
@@ -427,28 +448,65 @@ pub(crate) fn build_expr(
                 .call(children)
         }
         ExpressionKind::RepresentedStringLength => {
-            let string = build_expr(schema, kinds, payload, child_counts, longs, doubles, strings, cursor);
+            let string = build_expr(
+                schema,
+                kinds,
+                payload,
+                child_counts,
+                longs,
+                doubles,
+                strings,
+                cursor,
+            );
             let bytes = datafusion::functions::core::expr_fn::get_field(string, "utf8");
             build_typed_call(schema, scalar_op::CHAR_LENGTH, vec![bytes])
         }
         ExpressionKind::RepresentedStringComparison => {
-            let children = (0..2).map(|_| build_expr(
-                schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
-            )).collect();
+            let children = (0..2)
+                .map(|_| {
+                    build_expr(
+                        schema,
+                        kinds,
+                        payload,
+                        child_counts,
+                        longs,
+                        doubles,
+                        strings,
+                        cursor,
+                    )
+                })
+                .collect();
             crate::flink_functions::string_fusion::represented_comparison(payload[node])
                 .call(children)
         }
         ExpressionKind::StringTrim => {
-            let literal = ExpressionKind::from_code(kinds[*cursor]) == Some(ExpressionKind::LitString);
+            let literal =
+                ExpressionKind::from_code(kinds[*cursor]) == Some(ExpressionKind::LitString);
             let mut operands: Vec<_> = (0..2)
-                .map(|_| build_expr(
-                    schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
-                ))
+                .map(|_| {
+                    build_expr(
+                        schema,
+                        kinds,
+                        payload,
+                        child_counts,
+                        longs,
+                        doubles,
+                        strings,
+                        cursor,
+                    )
+                })
                 .collect();
             append_string_caches(schema, &mut operands, 1);
             if child_counts[node] == 3 {
                 operands.push(build_expr(
-                    schema, kinds, payload, child_counts, longs, doubles, strings, cursor,
+                    schema,
+                    kinds,
+                    payload,
+                    child_counts,
+                    longs,
+                    doubles,
+                    strings,
+                    cursor,
                 ));
             } else {
                 operands.push(logical_lit(ScalarValue::Boolean(Some(false))));
@@ -795,7 +853,8 @@ fn build_typed_call(
                     crate::flink_functions::function(scalar_op::TO_BASE64_BINARY, args.len())
                         .expect("binary TO_BASE64")
                 }
-                scalar_op::TRIM_WHITESPACE | scalar_op::LTRIM_WHITESPACE
+                scalar_op::TRIM_WHITESPACE
+                | scalar_op::LTRIM_WHITESPACE
                 | scalar_op::RTRIM_WHITESPACE => {
                     crate::flink_functions::byte_string_text::space_trim_function(op)
                 }
@@ -3342,7 +3401,12 @@ mod certified_builtin_tests {
                 string_cache_field(0, cache.data_type().clone()),
             ])),
             vec![
-                Arc::new(StringArray::from(vec![Some("skip"), Some("Ii"), Some("By"), None])),
+                Arc::new(StringArray::from(vec![
+                    Some("skip"),
+                    Some("Ii"),
+                    Some("By"),
+                    None,
+                ])),
                 cache,
             ],
         )
@@ -3362,12 +3426,21 @@ mod certified_builtin_tests {
                 compiled: None,
             };
             let result = calc.evaluate(input.clone());
-            let value = result.column(0).as_any().downcast_ref::<StructArray>().unwrap();
-            assert_eq!(value.column(0).as_ref(),
-                &StringArray::from(vec![Some(cold), Some(cached), None]));
+            let value = result
+                .column(0)
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .unwrap();
+            assert_eq!(
+                value.column(0).as_ref(),
+                &StringArray::from(vec![Some(cold), Some(cached), None])
+            );
             let output_cache = JavaStringCacheColumn::new(value.column(1));
             assert!(output_cache.value(0).is_none());
-            assert_eq!(output_cache.value(1), Some(cached.encode_utf16().collect::<Vec<_>>().as_slice()));
+            assert_eq!(
+                output_cache.value(1),
+                Some(cached.encode_utf16().collect::<Vec<_>>().as_slice())
+            );
         }
     }
 

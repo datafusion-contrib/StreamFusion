@@ -310,8 +310,13 @@ fn encode_java_utf16(mut units: &[u16], encoded: &mut Vec<u8>) {
             0x80..=0x7ff => {
                 encoded.extend_from_slice(&[(0xc0 | unit >> 6) as u8, (0x80 | unit & 0x3f) as u8]);
             }
-            0xd800..=0xdbff if units.first().is_some_and(|low| (0xdc00..=0xdfff).contains(low)) => {
-                let point = 0x10000 + (u32::from(unit - 0xd800) << 10) + u32::from(units[0] - 0xdc00);
+            0xd800..=0xdbff
+                if units
+                    .first()
+                    .is_some_and(|low| (0xdc00..=0xdfff).contains(low)) =>
+            {
+                let point =
+                    0x10000 + (u32::from(unit - 0xd800) << 10) + u32::from(units[0] - 0xdc00);
                 units = &units[1..];
                 encoded.extend_from_slice(&[
                     (0xf0 | point >> 18) as u8,
@@ -408,8 +413,9 @@ mod tests {
     fn edit_encoding_replaces_only_unpaired_surrogates() {
         let mut units: Vec<u16> = (0..=u16::MAX).collect();
         units.extend([0xd800, 0xdc00, 0xdbff, 0xdfff, 0xd800, b'?' as u16, 0xdc00]);
-        let expected: String =
-            char::decode_utf16(units.iter().copied()).map(|unit| unit.unwrap_or('?')).collect();
+        let expected: String = char::decode_utf16(units.iter().copied())
+            .map(|unit| unit.unwrap_or('?'))
+            .collect();
         let mut encoded = Vec::new();
         encode_java_utf16(&units, &mut encoded);
         assert_eq!(encoded, expected.as_bytes());

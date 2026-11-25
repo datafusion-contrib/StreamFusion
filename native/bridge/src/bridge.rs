@@ -48,11 +48,17 @@ impl FlinkException {
     }
 
     pub fn arithmetic(message: String) -> Self {
-        Self { class: "java/lang/ArithmeticException", message }
+        Self {
+            class: "java/lang/ArithmeticException",
+            message,
+        }
     }
 
     pub fn index_out_of_bounds() -> Self {
-        Self { class: "java/lang/IndexOutOfBoundsException", message: String::new() }
+        Self {
+            class: "java/lang/IndexOutOfBoundsException",
+            message: String::new(),
+        }
     }
 
     pub fn null_pointer(message: String) -> Self {
