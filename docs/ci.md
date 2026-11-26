@@ -75,6 +75,15 @@ are not retried. The lake matrix uses `fail-fast: false`, so one transport failu
 an unrelated module and force its complete rerun at the end of qualification. Cold producers may
 still encounter provider/shared-egress throttling; the cache prevents consumers amplifying it.
 
+Every upstream suite that reuses the common build runs its test invocation offline with the
+prepared user and global Maven settings, including Parquet, ORC, state and connector consumers.
+Surefire 3.0.0-M5 can query old test-dependency POMs while constructing its provider classpath
+even when the executable runtime is already cached. An unavailable repository can then leave
+an unresolved artifact and fail with `Artifact.getFile()` returning null before tests start.
+An isolated regression reproduces that failure against a local HTTP 503 repository, then runs
+the same Jupiter and Vintage tests offline without another repository request. Dependency
+preparation remains separate; missing required artifacts still fail the test invocation.
+
 The legacy Delta host audit verifies its cached dependency graph and Surefire providers in
 offline mode before opening a connection to Maven Central. Shared upstream preparation uses
 the same cache check for test-runtime artifacts and includes the pinned Maven Enforcer plugin

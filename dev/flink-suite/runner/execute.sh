@@ -76,7 +76,7 @@ MAVEN_TEST_ARGS=(
   -Dflink.forkCountUnitTest="${FLINK_SUITE_UNIT_FORKS:-2}" \
   -Dflink.forkCountITCase="${FLINK_SUITE_IT_FORKS:-1}"
 )
-if [[ "${SUITE_MODE}" == "runtime" && "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" == "true" ]]; then
+if [[ "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" == "true" ]]; then
   MAVEN_TEST_ARGS+=(-o -gs "${MAVEN_SETTINGS}")
 fi
 if [[ "${SUITE_MODE}" == "runtime" || "${SUITE_MODE}" == "diagnostic" ]]; then
