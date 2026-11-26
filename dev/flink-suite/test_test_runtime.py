@@ -72,6 +72,72 @@ def unavailable_repository(directory, original_settings):
 
 
 class TestRuntimePreparationTest(unittest.TestCase):
+    def test_exact_consumer_preparation_repairs_a_different_runtime_model_and_plugin_graph(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = str(fixture_settings(directory))
+            source = root / "src/test/java"
+            source.mkdir(parents=True)
+            for name, body in {
+                "JupiterTest": 'class JupiterTest { @org.junit.jupiter.api.Test void runs() {} }',
+                "VintageTest": 'public class VintageTest { @org.junit.Test public void runs() {} }',
+            }.items():
+                (source / (name + ".java")).write_text(body)
+            pom = root / "pom.xml"
+            shutil.copyfile(FIXTURE / "pom.xml", pom)
+            repository = root / "m2"
+            base = ["mvn", "-B", "-ntp", "-s", settings, "-gs", settings,
+                    "-f", str(pom), "-Dmaven.repo.local=" + str(repository),
+                    "-Dfixture.junit.version=5.9.1", "-Dfixture.surefire.version=3.2.2"]
+
+            def run(command, succeeds=True):
+                result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+                output = result.stdout + result.stderr
+                if succeeds:
+                    self.assertEqual(0, result.returncode, output)
+                else:
+                    self.assertNotEqual(0, result.returncode, output)
+                return output
+
+            run(base + ["-DskipTests", "test-compile"])
+            # As with Paimon, compiled tests are reused with a different runtime model.
+            runtime_pom = root / "runtime-pom.xml"
+            shutil.copyfile(pom, runtime_pom)
+            runtime = list(base)
+            runtime[runtime.index("-f") + 1] = str(runtime_pom)
+            runtime.extend(["-Dfixture.junit.version=5.11.4",
+                            "-Dfixture.surefire.version=3.2.5", "-Dmaven.test.failure.ignore=false"])
+            run([sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"), "--settings", settings,
+                 "--repository", str(repository),
+                 "--artifact", "org.apache.maven.surefire:surefire-junit-platform:3.2.5",
+                 "--artifact", "org.junit.platform:junit-platform-launcher:1.11.4"])
+            project_jar = repository / "org/junit/jupiter/junit-jupiter-api/5.11.4/junit-jupiter-api-5.11.4.jar"
+            plugin_jar = repository / "org/apache/maven/surefire/maven-surefire-common/3.2.5/maven-surefire-common-3.2.5.jar"
+            self.assertFalse(project_jar.exists())
+            self.assertFalse(plugin_jar.exists())
+            failure = run(runtime + ["-o", "surefire:test@integration-tests"], succeeds=False)
+            self.assertIn("offline", failure)
+            self.assertFalse(list((root / "target/surefire-reports").glob("TEST-*.xml")))
+            prepare = [sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"),
+                       "--offline-first", "--test-runtime", "-o", *runtime[1:]]
+            run(prepare)
+            self.assertTrue(project_jar.is_file())
+            self.assertTrue(plugin_jar.is_file())
+            with unavailable_repository(root, settings) as (unavailable, requests):
+                for command in (prepare, runtime):
+                    for index, argument in enumerate(command[:-1]):
+                        if argument in ("-s", "-gs", "--settings"):
+                            command[index + 1] = unavailable
+                self.assertEqual(2, run(prepare).count("already available offline"))
+                run(runtime + ["-o", "surefire:test@integration-tests"])
+                self.assertEqual([], requests)
+            reports = list((root / "target/surefire-reports").glob("TEST-*.xml"))
+            self.assertEqual(2, len(reports))
+            for report in reports:
+                result = ET.parse(report).getroot()
+                self.assertEqual(("1", "0", "0", "0"),
+                                 tuple(result.get(key) for key in ("tests", "errors", "failures", "skipped")))
+
     def test_real_providers_start_offline_after_isolated_resolution(self):
         with tempfile.TemporaryDirectory() as directory:
             settings = str(fixture_settings(directory))

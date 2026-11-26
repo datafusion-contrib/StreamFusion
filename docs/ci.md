@@ -82,8 +82,15 @@ even when the executable runtime is already cached. An unavailable repository ca
 an unresolved artifact and fail with `Artifact.getFile()` returning null before tests start.
 An isolated regression bounds retries for both Wagon and Resolver HTTP transports, reproduces
 that failure against a local HTTP 503 repository, then runs the same Jupiter and Vintage tests
-offline without another repository request. Dependency preparation remains separate; missing
-required artifacts still fail the test invocation.
+offline without another repository request. Before each shared consumer starts tests, a separate
+bounded dependency-only step resolves its exact mediated test classpath and the declared Surefire
+plugin's dependencies. It uses the consumer's wrapper, working directory, POM, profiles, version
+properties, isolated repository and settings, checking the cache offline before downloading missing
+artifacts. This also covers both generated Paimon 1.18 runtime POMs: compiling common tests against
+1.20 does not prepare their 1.18 runtime graph. Project dependencies and plugin dependencies resolve
+separately so plugin filters cannot omit required test artifacts. A preparation failure stops the
+consumer; test lifecycles remain offline and are never automatically retried. Dynamically selected
+Surefire providers and launchers are still prepared separately by the shared producer.
 
 The legacy Delta host audit verifies its cached dependency graph and Surefire providers in
 offline mode before opening a connection to Maven Central. Shared upstream preparation uses
@@ -101,8 +108,11 @@ The JDK 17 dependency preparation also resolves the three runtime test fixture g
 the released Surefire providers and launchers they need. Each fixture still starts with an
 empty local repository, populated from a read-only file mirror of the prepared repository.
 It verifies that incomplete test runtime preparation fails offline, then resolves the missing
-provider artifacts and runs both original Jupiter and Vintage checks offline. CI runs that
-regression without making three sets of cold downloads from Maven Central.
+provider artifacts and runs both original Jupiter and Vintage checks offline. A second fixture
+reuses compiled tests with a different runtime POM/version, verifies missing project and Surefire
+plugin artifacts are restored, and runs both engines against an unavailable repository without
+issuing a request. CI runs those regressions from the prepared cache, avoiding repeated cold
+downloads from Maven Central.
 
 ## Canonical coverage budget and connector scheduling
 
