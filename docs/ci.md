@@ -80,9 +80,10 @@ prepared user and global Maven settings, including Parquet, ORC, state and conne
 Surefire 3.0.0-M5 can query old test-dependency POMs while constructing its provider classpath
 even when the executable runtime is already cached. An unavailable repository can then leave
 an unresolved artifact and fail with `Artifact.getFile()` returning null before tests start.
-An isolated regression reproduces that failure against a local HTTP 503 repository, then runs
-the same Jupiter and Vintage tests offline without another repository request. Dependency
-preparation remains separate; missing required artifacts still fail the test invocation.
+An isolated regression bounds retries for both Wagon and Resolver HTTP transports, reproduces
+that failure against a local HTTP 503 repository, then runs the same Jupiter and Vintage tests
+offline without another repository request. Dependency preparation remains separate; missing
+required artifacts still fail the test invocation.
 
 The legacy Delta host audit verifies its cached dependency graph and Surefire providers in
 offline mode before opening a connection to Maven Central. Shared upstream preparation uses

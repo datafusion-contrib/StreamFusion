@@ -140,7 +140,11 @@ class TestRuntimePreparationTest(unittest.TestCase):
                             for flag in ("-s", "-gs"):
                                 consumer[consumer.index(flag) + 1] = unavailable
                             consumer.extend(["-e", "-Dmaven.wagon.http.retryHandler.count=0",
-                                             "-Dmaven.wagon.rto=1000"])
+                                             "-Dmaven.wagon.rto=1000",
+                                             "-Daether.connector.http.retryHandler.count=0",
+                                             "-Daether.connector.http.retryHandler.interval=1",
+                                             "-Daether.transport.http.retryHandler.count=0",
+                                             "-Daether.transport.http.retryHandler.interval=1"])
                             failure = run(consumer + ["surefire:test@integration-tests"],
                                           succeeds=False, timeout=30)
                             self.assertIn("ClasspathCache.setCachedClasspath", failure)
