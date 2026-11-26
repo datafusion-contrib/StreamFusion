@@ -67,7 +67,7 @@ jobs:
         run: >-
           mvn -B -ntp -Pflink-1.18,paimon1,bench -pl streamfusion-paimon1 -am
           -Dnative.build.skip=true
-          -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonAppendRoutingPlanTest,PaimonSourceSqlTest,PaimonSplitWatermarksTest,PaimonFetcherLifecycleTest,PaimonCompaction*Test,PaimonMaintenanceTest,PaimonBatchSqlTest,PaimonBatchEncodingTest'
+          -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonAppendRouting*Test,PaimonSourceSqlTest,PaimonSplitWatermarksTest,PaimonFetcherLifecycleTest,PaimonCompaction*Test,PaimonMaintenanceTest,PaimonBatchSqlTest,PaimonBatchEncodingTest'
           -Dsurefire.failIfNoSpecifiedTests=false '-Dsf.extraJvmArgs=-Xmx2g -XX:ActiveProcessorCount=2 --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED' test
       - name: Verify upstream fork isolation offline
         env:

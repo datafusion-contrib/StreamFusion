@@ -51,18 +51,20 @@ jobs. Postpone tables use the released bounded fixed-bucket protocol by default,
 partition's known bucket count; `postpone.batch-write-fixed-bucket=false` selects staging writes.
 Configured batch clustering retains Paimon's Java sorting and sink topology, with native Parquet
 encoding at the file boundary.
-Append routing preserves row-level round-robin distribution across the configured writers,
-including when the input has only one Arrow batch. Unexpected retract or update row kinds
-retain Paimon's append-only writer error instead of being discarded during routing.
+Bucket-unaware append writes use Paimon's default local routing when the input and writer
+parallelism match: partition-grouped Arrow batches flow directly into the writer, preserving
+operator chaining. When `sink.parallelism` changes the writer count, row-level round-robin
+routing redistributes rows, including a single input Arrow batch. Its routing operator keeps
+the input parallelism independently of the environment default; the target writer count controls
+the following channel shuffle. Explicit hash/dynamic partition routing, fixed/dynamic buckets,
+and Paimon's commit topology retain their required distribution and lifecycle.
+Unexpected retract or update row kinds retain Paimon's append-only writer error.
 Unspecified writer parallelism resolves through Flink's execution environment and configured
-default before the native router assigns channels.
-The append round-robin routing operator inherits its upstream bucket router's parallelism,
-independently of the environment default and any explicit `sink.parallelism`. This preserves
-the forward edge into routing instead of inserting a gather through a default-parallelism
-task. The target writer count still controls channel assignment and the following shuffle;
-writer parallelism and Paimon's commit topology remain unchanged. Both Paimon adapters share
-plan regressions with an environment default of 1, upstream parallelism of 3 or 786, and
-explicit writer counts smaller or larger than the upstream count.
+default before native routing. Shared plan tests compare actual stock/native JobGraph chains
+for partitioned/unpartitioned tables, input parallelism 3 or 786, and unchanged/smaller/larger
+writer counts. Checkpoint recovery tests compare complete committed rows and NULLs with stock
+and require native Parquet output. See [local append routing](../optimizations/paimon-local-append.md)
+for the structural reduction and its measurement limits.
 
 Continuous tails, periodic watermarks and consumer-retention cursors apply to streaming jobs.
 Batch reads retain the other source type, format, option and split-level fallbacks below.

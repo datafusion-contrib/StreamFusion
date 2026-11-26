@@ -723,6 +723,10 @@ outside the cached Cargo target. Restored dependency builds must not restore can
 snapshots or old trials into a new run. Artifact uploads retain these temporary outputs even
 when a diagnostic fails.
 
+The shared `PaimonAppendRouting*Test` selection covers stock/native JobGraph topology and
+checkpoint recovery for default-local append writes. Paimon 1.0 and the current adapter both
+run it; recovery requires committed-row parity, an actual restart and native Parquet footers.
+
 Paimon 1.0 compatibility builds release workspace libraries once with `mimalloc`, matching
 the reactor's `bench` profile, and verifies JNI/package boundaries before Maven runs. Both
 the source/sink parity phase and the upstream SQL phase pass `-Dnative.build.skip=true`

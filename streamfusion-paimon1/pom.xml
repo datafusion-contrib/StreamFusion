@@ -222,7 +222,7 @@
                                         <include>**/PaimonBatchSqlTest.java</include>
                                         <include>**/PaimonBatchEncodingTest.java</include>
                                         <include>**/PaimonOperatorDescriptionTest.java</include>
-                                        <include>**/PaimonAppendRoutingPlanTest.java</include>
+                                        <include>**/PaimonAppendRouting*Test.java</include>
                                         <include>**/PaimonSplitWatermarksTest.java</include>
                                         <include>**/PaimonFetcherLifecycleTest.java</include>
                                         <include>**/PaimonCompactionCompatibilityTest.java</include>
