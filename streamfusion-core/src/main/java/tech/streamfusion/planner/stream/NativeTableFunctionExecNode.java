@@ -34,6 +34,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
   private final RexNode condition;
   private final boolean left;
   private final boolean preserveCollections;
+  private final boolean preserveInternalStrings;
   private final RowType correlatedType;
   private final int[] projection;
   private final boolean hasProjection;
@@ -49,6 +50,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
       RexNode condition,
       boolean left,
       boolean preserveCollections,
+      boolean preserveInternalStrings,
       String description) {
     super(
         ExecNodeContext.newNodeId(),
@@ -65,6 +67,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
     this.condition = condition;
     this.left = left;
     this.preserveCollections = preserveCollections;
+    this.preserveInternalStrings = preserveInternalStrings;
   }
 
   @Override
@@ -115,7 +118,8 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
             NativeConfig.transposeBatchRows(config),
             preserveCollections,
             null,
-            resultProjection),
+            resultProjection,
+            preserveInternalStrings),
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

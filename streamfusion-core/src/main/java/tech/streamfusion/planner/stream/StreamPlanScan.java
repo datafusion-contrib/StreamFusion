@@ -235,6 +235,12 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
                   : "collection value representation requires a row sink");
       return root;
     }
+    if (BuiltinTableFunctionMatcher.crossesStringBoundary(substituted, finalOutput)) {
+      substitutions = previousSubstitutions;
+      rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
+      recordIslandFallback(root, "builtin table function StringData requires a final row output");
+      return root;
+    }
     if (CollectionValueIdentity.generatedCollectionCrossesBoundary(substituted, finalOutput)) {
       substitutions = previousSubstitutions;
       rollbackFunctionExecutions(previousFunctionExecutions, previousJvmFunctionOperators);
@@ -517,10 +523,6 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
             .reason(ChangelogNormalizeMatcher::unsupportedReason)
             .changelogSafe());
 
-    // INNER UNNEST of an array (Flink's Correlate over $UNNEST_ROWS$): fan each row out to one row
-    // per element of its array column, appending the element. Stateless and changelog-transparent
-    // (the `$row_kind$` tag rides through), so — like Expand — it is exempt from the insert-only
-    // guard.
     entries.add(
         Substitution.of(
                 StreamPhysicalCorrelate.class, "tableFunction", TableFunctionMatcher::substitute)
@@ -529,6 +531,18 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
             .reason(TableFunctionMatcher::unsupportedReason)
             .changelogSafe());
 
+    entries.add(
+        Substitution.of(
+                StreamPhysicalCorrelate.class, "tableFunction", TableFunctionMatcher::substitute)
+            .shaped(BuiltinTableFunctionMatcher::hasShape)
+            .matching(BuiltinTableFunctionMatcher::matches)
+            .reason(BuiltinTableFunctionMatcher::unsupportedReason)
+            .changelogSafe());
+
+    // INNER UNNEST of an array (Flink's Correlate over $UNNEST_ROWS$): fan each row out to one row
+    // per element of its array column, appending the element. Stateless and changelog-transparent
+    // (the `$row_kind$` tag rides through), so — like Expand — it is exempt from the insert-only
+    // guard.
     entries.add(
         Substitution.of(StreamPhysicalCorrelate.class, "unnest", UnnestMatcher::substitute)
             .matching(UnnestMatcher::matches)
@@ -926,6 +940,8 @@ public class StreamPlanScan implements FlinkOptimizeProgram<StreamOptimizeContex
     boolean stringCaches =
         node instanceof StreamPhysicalNativeCalc
                 && ((StreamPhysicalNativeCalc) node).requiresOriginalStringInputs()
+            || node instanceof StreamPhysicalNativeTableFunction
+                && ((StreamPhysicalNativeTableFunction) node).usesInternalStrings()
             || inheritedStringCaches
                 && (node instanceof StreamPhysicalNativeMiniBatchAssigner
                     || node instanceof StreamPhysicalNativeDropUpdateBefore
