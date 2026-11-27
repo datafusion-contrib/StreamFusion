@@ -728,7 +728,11 @@ checkpoint recovery for default-local append writes. Paimon 1.0 and the current 
 run it; recovery requires committed-row parity, an actual restart and native Parquet footers.
 
 Paimon 1.0 compatibility builds release workspace libraries once with `mimalloc`, matching
-the reactor's `bench` profile, and verifies JNI/package boundaries before Maven runs. Both
+the reactor's `bench` profile, and verifies JNI/package boundaries before JVM tests. Its
+parity and plan-only dependency graphs are prepared with bounded retries before the
+native build. Cold-cache build-extension or artifact failures therefore stop during setup,
+and a negative Maven lookup cache is refreshed on retry. Only dependency resolution is retried;
+test failures still fail the job without an automatic test repeat. Both
 the source/sink parity phase and the upstream SQL phase pass `-Dnative.build.skip=true`
 and reuse those libraries. Previously each Maven module invoked Cargo with a different
 package selection: the successful main run on 2026-10-20 performed seven release builds,
