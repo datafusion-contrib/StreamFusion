@@ -14,6 +14,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.util.InstantiationUtil;
 import org.junit.jupiter.api.Test;
 import tech.streamfusion.operator.aggregate.stream.JvmAccumulatorCache;
@@ -75,6 +77,22 @@ class RuntimeResponsibilityBoundaryTest {
         checked++;
       }
       assertEquals(73, checked, "All pre-refactor operator descriptors must be checked");
+    }
+  }
+
+  @Test
+  void builtinTableFunctionModeSurvivesDeploymentSerialization() throws Exception {
+    var type = RowType.of(new VarCharType());
+    int[] projection = {0};
+    var ordinary = new NativeColumnarTableFunctionOperator(type, type, null, projection, 4);
+    var builtin =
+        new NativeColumnarBuiltinTableFunctionOperator(type, type, null, projection, 4, null);
+    assertFalse(ordinary.preservesInternalStrings());
+    assertTrue(builtin.preservesInternalStrings());
+    for (var operator : List.of(ordinary, builtin)) {
+      var copy = InstantiationUtil.clone(operator, getClass().getClassLoader());
+      assertEquals(operator.getClass(), copy.getClass());
+      assertEquals(operator.preservesInternalStrings(), copy.preservesInternalStrings());
     }
   }
 

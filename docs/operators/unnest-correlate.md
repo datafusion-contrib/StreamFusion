@@ -241,7 +241,8 @@ Flink's generated code specializes the definition with the original call context
 function on the JVM. The Arrow input retains Flink's cached Java strings, which can affect the
 ordering of supplementary and BMP characters. The operator copies string bytes and any Java
 string cache to its Arrow output before the callback can reuse the object or its bytes.
-Built-ins and external Java `TableFunction` definitions use the same columnar operator.
+Both built-ins and external Java `TableFunction` definitions share the columnar operator logic.
+The built-in variant has its own deployment serialization identity.
 
 The released Flink 1.18.1 and 2.2.1 tests use a module-provided split function to check identical
 resolved schemas and typed rows for INNER fanout, LEFT padding, NULL and empty inputs, separator
@@ -261,10 +262,10 @@ Flink 1.18.1 and JDK 17 for 2.2.1. Values are seconds, shown as median (min–ma
 
 | Flink | Input rows | Stock Flink | Prior fallback | Arrow with JVM callback |
 | --- | ---: | ---: | ---: | ---: |
-| 1.18.1 | 16,384 | 0.073 (0.064–0.080) | 0.070 (0.059–0.075) | 0.096 (0.079–0.105) |
-| 1.18.1 | 131,072 | 0.108 (0.100–0.122) | 0.102 (0.099–0.129) | 0.169 (0.125–0.221) |
-| 2.2.1 | 16,384 | 0.071 (0.068–0.078) | 0.072 (0.062–0.079) | 0.078 (0.073–0.085) |
-| 2.2.1 | 131,072 | 0.095 (0.085–0.121) | 0.096 (0.091–0.100) | 0.146 (0.138–0.229) |
+| 1.18.1 | 16,384 | 0.075 (0.069–0.080) | 0.070 (0.067–0.079) | 0.086 (0.080–0.088) |
+| 1.18.1 | 131,072 | 0.101 (0.095–0.115) | 0.099 (0.094–0.111) | 0.144 (0.137–0.147) |
+| 2.2.1 | 16,384 | 0.075 (0.068–0.084) | 0.068 (0.067–0.072) | 0.074 (0.071–0.087) |
+| 2.2.1 | 131,072 | 0.098 (0.093–0.105) | 0.100 (0.095–0.101) | 0.133 (0.132–0.163) |
 
 Run on JDK 17 with:
 

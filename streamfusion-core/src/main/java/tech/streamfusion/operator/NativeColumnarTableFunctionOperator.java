@@ -20,15 +20,16 @@ import tech.streamfusion.compat.FlinkStreamOperator;
 /**
  * Borrows Arrow inputs for synchronous JVM evaluation and writes every emitted value immediately.
  */
-public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperator<ArrowBatch>
+public class NativeColumnarTableFunctionOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = 3389324191172110051L;
+
   private final RowType inputType;
   private final RowType outputType;
   private final GeneratedClass<? extends StreamOperator<RowData>> generated;
   private final int batchRows;
   private final int[] projection;
   private final boolean preserveCollections;
-  private final boolean preserveInternalStrings;
   private final int[] inputMapping;
   private final org.apache.flink.table.runtime.generated.GeneratedProjection generatedProjection;
   private transient org.apache.flink.table.runtime.generated.Projection<RowData, ? extends RowData>
@@ -91,29 +92,6 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
       boolean preserveCollections,
       int[] inputMapping,
       org.apache.flink.table.runtime.generated.GeneratedProjection generatedProjection) {
-    this(
-        inputType,
-        outputType,
-        generated,
-        projection,
-        batchRows,
-        preserveCollections,
-        inputMapping,
-        generatedProjection,
-        false);
-  }
-
-  public NativeColumnarTableFunctionOperator(
-      RowType inputType,
-      RowType outputType,
-      GeneratedClass<? extends StreamOperator<RowData>> generated,
-      int[] projection,
-      int batchRows,
-      boolean preserveCollections,
-      int[] inputMapping,
-      org.apache.flink.table.runtime.generated.GeneratedProjection generatedProjection,
-      boolean preserveInternalStrings) {
-    this.preserveInternalStrings = preserveInternalStrings;
     this.generatedProjection = generatedProjection;
     this.inputMapping = inputMapping;
     this.preserveCollections = preserveCollections;
@@ -122,6 +100,10 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
     this.generated = generated;
     this.batchRows = batchRows;
     this.projection = projection;
+  }
+
+  protected boolean preservesInternalStrings() {
+    return false;
   }
 
   @Override
@@ -137,7 +119,7 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
     outputSchema = runtimeOptions().arrowSchema(outputType, preserveCollections);
     if (preserveCollections)
       outputSchema = tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(outputSchema);
-    if (preserveInternalStrings) outputSchema = ByteStringTransport.resultSchema(outputSchema);
+    if (preservesInternalStrings()) outputSchema = ByteStringTransport.resultSchema(outputSchema);
     projected = org.apache.flink.table.data.utils.ProjectedRowData.from(projection);
     rowProjection =
         generatedProjection == null
@@ -190,7 +172,7 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
     if (result == null) {
       result = VectorSchemaRoot.create(outputSchema, NativeAllocator.SHARED);
       writer = ArrowConversion.createRowDataArrowWriter(result, outputType);
-      if (preserveCollections || preserveInternalStrings)
+      if (preserveCollections || preservesInternalStrings())
         caches =
             new tech.streamfusion.arrow.StringCacheColumns.Writer(
                 outputType, NativeAllocator.SHARED);

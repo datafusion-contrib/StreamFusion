@@ -22,6 +22,7 @@ import org.apache.flink.table.runtime.operators.join.FlinkJoinType;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarBuiltinTableFunctionOperator;
 import tech.streamfusion.operator.NativeColumnarTableFunctionOperator;
 import tech.streamfusion.planner.ExpressionPlanning;
 import tech.streamfusion.planner.NativeConfig;
@@ -107,19 +108,25 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
                 outputType,
                 projection)
             : null;
+    int batchRows = NativeConfig.transposeBatchRows(config);
+    var generatedOperator = generated.getGeneratedClass();
+    var operator =
+        preserveInternalStrings
+            ? new NativeColumnarBuiltinTableFunctionOperator(
+                inputType, outputType, generatedOperator, projection, batchRows, resultProjection)
+            : new NativeColumnarTableFunctionOperator(
+                inputType,
+                outputType,
+                generatedOperator,
+                projection,
+                batchRows,
+                preserveCollections,
+                null,
+                resultProjection);
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta("native-table-function", config),
-        new NativeColumnarTableFunctionOperator(
-            inputType,
-            (RowType) getOutputType(),
-            generated.getGeneratedClass(),
-            projection,
-            NativeConfig.transposeBatchRows(config),
-            preserveCollections,
-            null,
-            resultProjection,
-            preserveInternalStrings),
+        operator,
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);
