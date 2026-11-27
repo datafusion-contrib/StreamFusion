@@ -22,6 +22,7 @@ import org.apache.flink.table.runtime.operators.join.FlinkJoinType;
 import org.apache.flink.table.types.logical.RowType;
 import tech.streamfusion.operator.ArrowBatch;
 import tech.streamfusion.operator.ArrowBatchTypeInformation;
+import tech.streamfusion.operator.NativeColumnarBuiltinTableFunctionOperator;
 import tech.streamfusion.operator.NativeColumnarTableFunctionOperator;
 import tech.streamfusion.planner.ExpressionPlanning;
 import tech.streamfusion.planner.NativeConfig;
@@ -34,6 +35,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
   private final RexNode condition;
   private final boolean left;
   private final boolean preserveCollections;
+  private final boolean preserveInternalStrings;
   private final RowType correlatedType;
   private final int[] projection;
   private final boolean hasProjection;
@@ -49,6 +51,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
       RexNode condition,
       boolean left,
       boolean preserveCollections,
+      boolean preserveInternalStrings,
       String description) {
     super(
         ExecNodeContext.newNodeId(),
@@ -65,6 +68,7 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
     this.condition = condition;
     this.left = left;
     this.preserveCollections = preserveCollections;
+    this.preserveInternalStrings = preserveInternalStrings;
   }
 
   @Override
@@ -104,18 +108,25 @@ public final class NativeTableFunctionExecNode extends ExecNodeBase<ArrowBatch>
                 outputType,
                 projection)
             : null;
+    int batchRows = NativeConfig.transposeBatchRows(config);
+    var generatedOperator = generated.getGeneratedClass();
+    var operator =
+        preserveInternalStrings
+            ? new NativeColumnarBuiltinTableFunctionOperator(
+                inputType, outputType, generatedOperator, projection, batchRows, resultProjection)
+            : new NativeColumnarTableFunctionOperator(
+                inputType,
+                outputType,
+                generatedOperator,
+                projection,
+                batchRows,
+                preserveCollections,
+                null,
+                resultProjection);
     return ExecNodeUtil.createOneInputTransformation(
         input,
         createTransformationMeta("native-table-function", config),
-        new NativeColumnarTableFunctionOperator(
-            inputType,
-            (RowType) getOutputType(),
-            generated.getGeneratedClass(),
-            projection,
-            NativeConfig.transposeBatchRows(config),
-            preserveCollections,
-            null,
-            resultProjection),
+        operator,
         ArrowBatchTypeInformation.INSTANCE,
         input.getParallelism(),
         false);

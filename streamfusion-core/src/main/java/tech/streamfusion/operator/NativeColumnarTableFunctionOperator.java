@@ -13,14 +13,17 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import tech.streamfusion.arrow.ArrowConversion;
 import tech.streamfusion.arrow.ArrowWriter;
+import tech.streamfusion.arrow.ByteStringTransport;
 import tech.streamfusion.compat.FlinkOutput;
 import tech.streamfusion.compat.FlinkStreamOperator;
 
 /**
  * Borrows Arrow inputs for synchronous JVM evaluation and writes every emitted value immediately.
  */
-public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperator<ArrowBatch>
+public class NativeColumnarTableFunctionOperator extends FlinkStreamOperator<ArrowBatch>
     implements OneInputStreamOperator<ArrowBatch, ArrowBatch> {
+  private static final long serialVersionUID = 3389324191172110051L;
+
   private final RowType inputType;
   private final RowType outputType;
   private final GeneratedClass<? extends StreamOperator<RowData>> generated;
@@ -99,6 +102,10 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
     this.projection = projection;
   }
 
+  protected boolean preservesInternalStrings() {
+    return false;
+  }
+
   @Override
   @SuppressWarnings("unchecked")
   public void open() throws Exception {
@@ -112,6 +119,7 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
     outputSchema = runtimeOptions().arrowSchema(outputType, preserveCollections);
     if (preserveCollections)
       outputSchema = tech.streamfusion.arrow.NestedRepresentation.withBinaryRows(outputSchema);
+    if (preservesInternalStrings()) outputSchema = ByteStringTransport.resultSchema(outputSchema);
     projected = org.apache.flink.table.data.utils.ProjectedRowData.from(projection);
     rowProjection =
         generatedProjection == null
@@ -164,7 +172,7 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
     if (result == null) {
       result = VectorSchemaRoot.create(outputSchema, NativeAllocator.SHARED);
       writer = ArrowConversion.createRowDataArrowWriter(result, outputType);
-      if (preserveCollections)
+      if (preserveCollections || preservesInternalStrings())
         caches =
             new tech.streamfusion.arrow.StringCacheColumns.Writer(
                 outputType, NativeAllocator.SHARED);
@@ -192,7 +200,7 @@ public final class NativeColumnarTableFunctionOperator extends FlinkStreamOperat
     resultKinds = null;
     writer = null;
     count = 0;
-    ColumnarRecordMetrics.emit(output, getMetricGroup(), new ArrowBatch(batch));
+    ColumnarRecordMetrics.emitOwned(output, getMetricGroup(), batch);
   }
 
   private void discard() {

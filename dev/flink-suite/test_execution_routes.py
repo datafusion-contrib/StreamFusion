@@ -65,7 +65,8 @@ class RuntimeRoutesTest(unittest.TestCase):
         self.assertEqual('unclassified', self.classify({'batch': unsupported}))
 
     def test_jvm_function_work_requires_the_matching_completed_operator(self):
-        for name in ('NativeColumnarJvmGroupOperator', 'NativeColumnarTableFunctionOperator', 'NativeColumnarJvmOverOperator'):
+        for name in ('NativeColumnarJvmGroupOperator', 'NativeColumnarTableFunctionOperator',
+                     'NativeColumnarBuiltinTableFunctionOperator', 'NativeColumnarJvmOverOperator'):
             classes = [self.SOURCE, 'tech.streamfusion.operator.RowDataToArrowOperator',
                        'tech.streamfusion.operator.' + name,
                        'tech.streamfusion.operator.ArrowToRowDataOperator', self.SINK]

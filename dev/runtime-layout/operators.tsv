@@ -38,6 +38,7 @@ tech.streamfusion.operator.NativeBoundedBatchOperator	batch-execution	batch	depl
 tech.streamfusion.operator.NativeBuiltinFunctions	functions	shared	implementation
 tech.streamfusion.operator.NativeBytesDecodeOperator	columnar-transport	shared	deployment-serialization
 tech.streamfusion.operator.NativeCalcOperator	calc	shared	deployment-serialization
+tech.streamfusion.operator.NativeColumnarBuiltinTableFunctionOperator	functions	stream	deployment-serialization
 tech.streamfusion.operator.NativeColumnarChangelogNormalizeOperator	changelog	stream	deployment-serialization
 tech.streamfusion.operator.NativeColumnarDeduplicateOperator	rank	stream	deployment-serialization
 tech.streamfusion.operator.NativeColumnarDropUpdateBeforeOperator	changelog	stream	deployment-serialization

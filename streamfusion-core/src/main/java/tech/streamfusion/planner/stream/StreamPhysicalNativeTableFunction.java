@@ -7,7 +7,9 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexNode;
+import org.apache.flink.table.functions.BuiltInFunctionDefinition;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
+import org.apache.flink.table.planner.functions.bridging.BridgingSqlFunction;
 import org.apache.flink.table.planner.plan.nodes.exec.ExecNode;
 import org.apache.flink.table.planner.utils.ShortcutUtils;
 import tech.streamfusion.planner.ColumnarInput;
@@ -64,6 +66,11 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
     this.invocation = invocation;
     this.condition = condition;
     this.left = left;
+  }
+
+  boolean usesInternalStrings() {
+    return ((BridgingSqlFunction) invocation.getOperator()).getDefinition()
+        instanceof BuiltInFunctionDefinition;
   }
 
   boolean preservesCollections() {
@@ -131,6 +138,7 @@ public final class StreamPhysicalNativeTableFunction extends StreamPhysicalNativ
         condition,
         left,
         preservesCollections(),
+        usesInternalStrings(),
         getRelDetailedDescription());
   }
 }

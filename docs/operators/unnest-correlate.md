@@ -96,8 +96,9 @@ error for NULL ROW elements; they must not silently produce a different result n
 
 ## What's not
 
-- **JVM table functions outside the verified scalar boundary below**, specialized functions,
-  Python/async functions and legacy SQL wrappers retain fallback.
+- **JVM table functions outside the verified scalar, recursive external, and built-in string
+  boundaries below** retain fallback. This includes other specialized functions, Python/async
+  functions and legacy SQL wrappers.
 - **Types outside the Arrow bridge, user expressions outside their existing admission gates,
   or an unverified collection producer/consumer boundary** retain fallback. A builtin condition
   can use generated evaluation when it cannot use the Arrow expression engine.
@@ -188,9 +189,10 @@ result columns may recursively contain the verified non-null primitive and tempo
 bridges, external arrays, Lists and nested primitive arrays. Each ROW/MAP layer retains its
 default external container class. List arguments use the List interface; concrete/custom List
 classes are result-only, including nested positions. Internal
-`ArrayData`/`MapData`/`RowData`, MULTISET/STRUCTURED/RAW, specialized functions, Python/async
-functions and legacy SQL wrappers retain fallback. The ordinary `streamfusion.operator.tableFunction.enabled`
-switch can disable this operator.
+`ArrayData`/`MapData`/`RowData`, MULTISET/STRUCTURED/RAW, and other unverified specialized
+functions, Python/async functions and legacy SQL wrappers retain fallback.
+The `streamfusion.operator.tableFunction.enabled` switch controls both ordinary and built-in JVM
+table functions.
 
 Fixed BINARY uses the existing default variable-byte Arrow transport, preserving the released
 function's actual bytes even when their length differs from BINARY(n). Values are copied into
@@ -224,6 +226,56 @@ mutable collected arrays/rows, INNER/LEFT fanout, pushed filters, chained functi
 empty projections, failures, all changelog kinds and repeated memory/RocksDB recovery on both
 supported Flink lines. The unchanged released Table API `CorrelateITCase.testRowType` additionally
 requires the table-function operator to consume input in every backend invocation.
+
+### Synchronous built-in string table functions
+
+StreamFusion admits synchronous Flink `TABLE` built-ins with a runtime implementation that
+specializes to a `BuiltInTableFunction`. The verified streaming shape is INNER or LEFT with
+`ON TRUE`, scalar rows entering from a verified Flink row source, and one or more character column
+or literal arguments. Each argument and the single atomic CHAR/VARCHAR result must use Flink's
+internal `StringData` conversion after specialization. Results can reach a final row output,
+including folded column projections. An already columnar input, a downstream columnar consumer,
+other built-in conversions, composite results and Correlate predicates retain Flink fallback.
+
+Flink's generated code specializes the definition with the original call context and invokes the
+function on the JVM. The Arrow input retains Flink's cached Java strings, which can affect the
+ordering of supplementary and BMP characters. The operator copies string bytes and any Java
+string cache to its Arrow output before the callback can reuse the object or its bytes.
+Both built-ins and external Java `TableFunction` definitions share the columnar operator logic.
+The built-in variant has its own deployment serialization identity.
+
+The released Flink 1.18.1 and 2.2.1 tests use a module-provided split function to check identical
+resolved schemas and typed rows for INNER fanout, LEFT padding, NULL and empty inputs, separator
+sets, Unicode and duplicate results. The tests also check literal specialization, open and eval
+failures, lifecycle completion, ownership across input and output batches, and Java string ordering.
+Native execution assertions count rows consumed and emitted by the table-function operator itself.
+The JVM function inventory tracks remaining conversion and specialization contracts.
+[Issue #237](https://github.com/datafusion-contrib/StreamFusion/issues/237)
+
+`BuiltinTableFunctionBenchmark` measures bounded complete jobs with a Flink row source and
+blackhole sink, parallelism one, and the release native library. The Arrow route includes both
+transposes and asserts that the table-function operator consumes input. The table-function switch
+reproduces the previous whole-query fallback plan with zero substitutions. Each comparison
+alternates engine order, with two warmups and five measured runs per engine. Stock samples from
+both comparisons are pooled below. Runs used an Intel i7-12650H under WSL2, with JDK 11 for
+Flink 1.18.1 and JDK 17 for 2.2.1. Values are seconds, shown as median (min–max).
+
+| Flink | Input rows | Stock Flink | Prior fallback | Arrow with JVM callback |
+| --- | ---: | ---: | ---: | ---: |
+| 1.18.1 | 16,384 | 0.075 (0.069–0.080) | 0.070 (0.067–0.079) | 0.086 (0.080–0.088) |
+| 1.18.1 | 131,072 | 0.101 (0.095–0.115) | 0.099 (0.094–0.111) | 0.144 (0.137–0.147) |
+| 2.2.1 | 16,384 | 0.075 (0.068–0.084) | 0.068 (0.067–0.072) | 0.074 (0.071–0.087) |
+| 2.2.1 | 131,072 | 0.098 (0.093–0.105) | 0.100 (0.095–0.101) | 0.133 (0.132–0.163) |
+
+Run on JDK 17 with:
+
+```sh
+SF_BENCHMARK=true mvn -Pbench,benchmarks -pl streamfusion-runtime -am test \
+  -Dtest=BuiltinTableFunctionBenchmark -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dboundary.rows=131072
+```
+
+Use `-Pflink-1.18,bench,benchmarks` on JDK 11. Use `-Dboundary.rows=16384` for the smaller job.
 
 ### Primitive table-function results (2026-10-24)
 
@@ -931,7 +983,7 @@ complete-job gains and remaining stock-Flink deficit. Larger values, temporal co
 and owned exit copies retain their existing paths; no collector or ownership contract changes.
 
 This does not complete [#237](https://github.com/datafusion-contrib/StreamFusion/issues/237): JVM
-two-phase/OVER aggregate functions, additional scalar conversion classes and specialized/legacy
+two-phase/OVER aggregate functions, additional scalar conversion classes and other specialized/legacy
 table-function contracts remain open. All async feature work, lookup-join-related extensions,
 Python functions and MATCH_RECOGNIZE are outside the current ticket scope. Performance evidence
 includes release jobs with row sources, both transposes, row

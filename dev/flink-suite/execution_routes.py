@@ -71,7 +71,7 @@ NATIVE_OPERATORS = {
         'NativeColumnarLocalGroupAggregateOperator',
         'NativeColumnarJvmGroupOperator', 'NativeColumnarJvmLocalGroupOperator',
         'NativeColumnarJvmGlobalGroupOperator', 'NativeColumnarJvmOverOperator',
-        'NativeColumnarTableFunctionOperator',
+        'NativeColumnarTableFunctionOperator', 'NativeColumnarBuiltinTableFunctionOperator',
         'NativeColumnarUpdatingJoinOperator', 'NativeColumnarTopNOperator',
         'NativeColumnarGlobalWindowAggregateOperator')
 } | {ALIASED_FILTER_OPERATOR}

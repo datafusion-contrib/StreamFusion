@@ -63,13 +63,16 @@ public final class JvmFunctionConversions {
 
   public static TypeInferenceUtil.Result infer(RexCall call) {
     var function = (BridgingSqlFunction) call.getOperator();
-    var context =
-        new OperatorBindingCallContext(
-            function.getDataTypeFactory(),
-            function.getDefinition(),
-            RexCallBinding.create(function.getTypeFactory(), call, null, Collections.emptyList()),
-            call.getType());
-    return TypeInferenceUtil.runTypeInference(function.getTypeInference(), context, null);
+    return TypeInferenceUtil.runTypeInference(function.getTypeInference(), callContext(call), null);
+  }
+
+  public static OperatorBindingCallContext callContext(RexCall call) {
+    var function = (BridgingSqlFunction) call.getOperator();
+    return new OperatorBindingCallContext(
+        function.getDataTypeFactory(),
+        function.getDefinition(),
+        RexCallBinding.create(function.getTypeFactory(), call, null, Collections.emptyList()),
+        call.getType());
   }
 
   public static boolean verifiedArgumentConversion(DataType type) {
