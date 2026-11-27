@@ -91,6 +91,14 @@ artifacts. This also covers both generated Paimon 1.18 runtime POMs: compiling c
 separately so plugin filters cannot omit required test artifacts. A preparation failure stops the
 consumer; test lifecycles remain offline and are never automatically retried. Dynamically selected
 Surefire providers and launchers are still prepared separately by the shared producer.
+Paimon 2.0/2.1 use Surefire 3.0.0-M5 and JUnit Platform 1.8.1 on both Flink lines; their
+provider/launcher graphs are prepared independently of Flink 2.2's newer runtime. Before
+compiling Paimon, bounded preparation loads its inherited Checkstyle plugin through that plugin's
+`help` goal with the selected reactor's actual release profile/properties. This uses Maven's plugin
+realm and custom dependencies; Maven still loads Checkstyle before honoring its skip flag. Unlike
+generic dependency-plugin resolution, it avoids the plugin's unmediated dependency graph and
+unrelated reporting/plugin-management entries. It runs no checks, resolves no unfinished reactor
+artifacts and never retries a build/test lifecycle.
 
 The legacy Delta host audit verifies its cached dependency graph and Surefire providers in
 offline mode before opening a connection to Maven Central. Shared upstream preparation uses
@@ -104,7 +112,7 @@ The HTTP resolver keeps two retries per request and starts with a 15-second cool
 the server omits `Retry-After`, giving a throttled runner more time before resending.
 Legacy Delta runs its test lifecycle offline once the required artifacts are present.
 
-The JDK 17 dependency preparation also resolves the three runtime test fixture graphs and
+The JDK 17 dependency preparation also resolves the Flink, Kafka and Paimon runtime fixture graphs and
 the released Surefire providers and launchers they need. Each fixture still starts with an
 empty local repository, populated from a read-only file mirror of the prepared repository.
 It verifies that incomplete test runtime preparation fails offline, then resolves the missing

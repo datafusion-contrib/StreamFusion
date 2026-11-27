@@ -200,6 +200,34 @@ class MavenDependenciesTest(unittest.TestCase):
         self.assertNotIn(PREPARE.GOAL, command)
         self.assertFalse({"test", "verify", "package", "install"} & set(command))
 
+    def test_reactor_plugin_preparation_avoids_unfinished_project_dependencies(self):
+        options = self.options()
+        options.plugin_help = ["org.apache.maven.plugins:maven-checkstyle-plugin"]
+        options.offline_first = True
+        options.define = ["checkstyle.skip=true", "test.flink.version=1.18.1"]
+        with patch.object(PREPARE.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertEqual(0, PREPARE.resolve(options))
+        command = run.call_args.args[0]
+        self.assertEqual("org.apache.maven.plugins:maven-checkstyle-plugin:help", command[-1])
+        self.assertNotIn(PREPARE.PLUGIN_GOAL, command)
+        self.assertIn("-pl", command)
+        self.assertIn("-am", command)
+        self.assertIn("-Pflink-1.18", command)
+        self.assertIn("-Dcheckstyle.skip=true", command)
+        self.assertNotIn(PREPARE.PROJECT_GOAL, command)
+        self.assertNotIn(PREPARE.GOAL, command)
+        self.assertFalse({"test", "verify", "package", "install", "validate"} & set(command))
+
+    def test_plugin_preparation_rejects_coordinates_with_executable_goals(self):
+        for plugin in ("org.example:plugin:test", "org.example:plugin:1:verify", "-Dtest.skip=true"):
+            with self.subTest(plugin=plugin):
+                options = self.options()
+                options.plugin_help = [plugin]
+                with patch.object(PREPARE.subprocess, "run") as run, \
+                        self.assertRaisesRegex(ValueError, "GROUP_ID:ARTIFACT_ID"):
+                    PREPARE.resolve(options)
+                run.assert_not_called()
+
     def test_missing_download_is_rechecked_and_can_recover(self):
         status, calls, sleeps = self.invoke([1, 1, 0])
         self.assertEqual(0, status)

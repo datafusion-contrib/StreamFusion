@@ -331,6 +331,8 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                     "org.apache.httpcomponents:httpclient:4.4.1",
                                     "org.apache.paimon:paimon-vfs-hadoop:2.0.0",
                                     "org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0",
+                                    "org.apache.maven.surefire:surefire-junit-platform:3.0.0-M5",
+                                    "org.junit.platform:junit-platform-launcher:1.8.1",
                                     "org.apache.maven.plugins:maven-enforcer-plugin:3.0.0-M1"]
                         if line == "2.2":
                             expected.extend(["org.apache.maven.surefire:surefire-junit-platform:3.2.5",

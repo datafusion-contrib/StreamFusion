@@ -4,6 +4,7 @@
 import argparse
 from pathlib import Path
 import random
+import re
 import subprocess
 import sys
 import time
@@ -96,6 +97,12 @@ def resolve(options):
     if getattr(options, "resolve_project", False):
         # go-offline visits dependencies separately from Maven's lifecycle mediation.
         goal.append(PROJECT_GOAL)
+    if getattr(options, "plugin_help", False):
+        # Loading a help mojo uses Maven's actual plugin realm, including overrides.
+        # dependency:resolve-plugins also visits the plugin's unmediated graph.
+        if any(not re.fullmatch(r"[\w.-]+:[\w.-]+", plugin) for plugin in options.plugin_help):
+            raise ValueError("Plugin help requires GROUP_ID:ARTIFACT_ID coordinates")
+        goal = [plugin + ":help" for plugin in options.plugin_help]
     transitive = "false" if getattr(options, "no_transitive", False) else "true"
     commands = ([command + [ARTIFACT_GOAL, "-Dartifact=" + artifact, "-Dtransitive=" + transitive]
                  for artifact in options.artifact] if options.artifact else [command + goal])
@@ -166,6 +173,8 @@ def main():
                             help="Prepare plugins and the exact mediated classpath of a standalone project")
     resolution.add_argument("--graph", action="store_true",
                             help="Record the mediated dependency graph without compiling reactor artifacts")
+    resolution.add_argument("--plugin-help", nargs="+", metavar="GROUP_ID:ARTIFACT_ID",
+                            help="Load declared build plugins through dependency-only help goals before compilation")
     resolution.add_argument("--test-runtime", nargs=argparse.REMAINDER,
                             help="Resolve the exact consumer classpath and Surefire plugin; remaining arguments must be Maven options")
     options = parser.parse_args()
