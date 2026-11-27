@@ -247,6 +247,23 @@ if [[ "${FLINK_SUITE_REUSE_BUILD:-false}" != "true" ]]; then
         --repository "${SUITE_MAVEN_REPO}" \
         --artifact "${PAIMON_ENFORCER_ARTIFACT}" || exit $?
     fi
+    echo "Preparing the pinned Paimon reactor's inherited Checkstyle plugin before compilation..."
+    paimon_plugin_modules="${PAIMON_MODULE}"
+    if [[ "${FLINK_LINE}" == "1.18" ]]; then
+      paimon_plugin_modules+=",${PAIMON_LINE_MODULE}"
+    fi
+    paimon_plugin_defines=()
+    for argument in "${PAIMON_BUILD_ARGS[@]}"; do
+      if [[ "${argument}" == -D* ]]; then
+        paimon_plugin_defines+=(--define "${argument#-D}")
+      fi
+    done
+    python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
+      --plugin-help org.apache.maven.plugins:maven-checkstyle-plugin --offline-first \
+      --settings "${MAVEN_SETTINGS}" --repository "${SUITE_MAVEN_REPO}" \
+      --pom "${PAIMON_ROOT}/pom.xml" --profile "${PAIMON_FLINK_PROFILE}" \
+      --projects "${paimon_plugin_modules}" --also-make \
+      "${paimon_plugin_defines[@]}" || exit $?
     echo "Building the pinned Paimon Flink connector and compiling its untouched SQL integration tests..."
     mvn -B -ntp -s "${MAVEN_SETTINGS}" -f "${PAIMON_ROOT}/pom.xml" \
       -Dmaven.repo.local="${SUITE_MAVEN_REPO}" "${PAIMON_BUILD_ARGS[@]}" \
@@ -286,6 +303,9 @@ if [[ "${SUITE_MODE}" == "prepare" ]]; then
     --artifact "org.apache.httpcomponents:httpclient:4.4.1"
     --artifact "org.apache.paimon:paimon-vfs-hadoop:${PAIMON_VERSION}"
     --artifact "org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0"
+    # Paimon 2.0/2.1 retain this runtime on both Flink lines, independently of Flink.
+    --artifact "org.apache.maven.surefire:surefire-junit-platform:3.0.0-M5"
+    --artifact "org.junit.platform:junit-platform-launcher:1.8.1"
   )
   if [[ -n "${PAIMON_ENFORCER_ARTIFACT}" ]]; then
     # The Paimon reactor needs this plugin before it can compile the connector or run tests.

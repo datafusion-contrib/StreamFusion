@@ -1,5 +1,7 @@
 """Dependency preparation must use the transferred repository and block incomplete builds."""
 
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
@@ -7,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -34,7 +37,107 @@ def fixture_settings(directory):
     return path
 
 
+@contextmanager
+def unavailable_repository(directory, original_settings):
+    requests = []
+
+    class Unavailable(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append(self.path)
+            self.send_error(503)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Unavailable)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    namespace = {"m": "http://maven.apache.org/SETTINGS/1.0.0"}
+    original = ET.parse(original_settings)
+    identifier = (original.findtext("m:mirrors/m:mirror/m:id", namespaces=namespace)
+                  or original.findtext("mirrors/mirror/id", "central"))
+    settings = ET.Element("settings")
+    mirror = ET.SubElement(ET.SubElement(settings, "mirrors"), "mirror")
+    ET.SubElement(mirror, "id").text = identifier
+    ET.SubElement(mirror, "mirrorOf").text = "*"
+    ET.SubElement(mirror, "url").text = f"http://127.0.0.1:{server.server_port}"
+    path = Path(directory) / "unavailable-settings.xml"
+    ET.ElementTree(settings).write(path, encoding="utf-8")
+    try:
+        yield str(path), requests
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
 class TestRuntimePreparationTest(unittest.TestCase):
+    def test_exact_consumer_preparation_repairs_a_different_runtime_model_and_plugin_graph(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = str(fixture_settings(directory))
+            source = root / "src/test/java"
+            source.mkdir(parents=True)
+            for name, body in {
+                "JupiterTest": 'class JupiterTest { @org.junit.jupiter.api.Test void runs() {} }',
+                "VintageTest": 'public class VintageTest { @org.junit.Test public void runs() {} }',
+            }.items():
+                (source / (name + ".java")).write_text(body)
+            pom = root / "pom.xml"
+            shutil.copyfile(FIXTURE / "pom.xml", pom)
+            repository = root / "m2"
+            base = ["mvn", "-B", "-ntp", "-s", settings, "-gs", settings,
+                    "-f", str(pom), "-Dmaven.repo.local=" + str(repository),
+                    "-Dfixture.junit.version=5.9.1", "-Dfixture.surefire.version=3.2.2"]
+
+            def run(command, succeeds=True):
+                result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+                output = result.stdout + result.stderr
+                if succeeds:
+                    self.assertEqual(0, result.returncode, output)
+                else:
+                    self.assertNotEqual(0, result.returncode, output)
+                return output
+
+            run(base + ["-DskipTests", "test-compile"])
+            # As with Paimon, compiled tests are reused with a different runtime model.
+            runtime_pom = root / "runtime-pom.xml"
+            shutil.copyfile(pom, runtime_pom)
+            runtime = list(base)
+            runtime[runtime.index("-f") + 1] = str(runtime_pom)
+            runtime.extend(["-Dfixture.junit.version=5.11.4",
+                            "-Dfixture.surefire.version=3.2.5", "-Dmaven.test.failure.ignore=false"])
+            run([sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"), "--settings", settings,
+                 "--repository", str(repository),
+                 "--artifact", "org.apache.maven.surefire:surefire-junit-platform:3.2.5",
+                 "--artifact", "org.junit.platform:junit-platform-launcher:1.11.4"])
+            project_jar = repository / "org/junit/jupiter/junit-jupiter-api/5.11.4/junit-jupiter-api-5.11.4.jar"
+            plugin_jar = repository / "org/apache/maven/surefire/maven-surefire-common/3.2.5/maven-surefire-common-3.2.5.jar"
+            self.assertFalse(project_jar.exists())
+            self.assertFalse(plugin_jar.exists())
+            failure = run(runtime + ["-o", "surefire:test@integration-tests"], succeeds=False)
+            self.assertIn("offline", failure)
+            self.assertFalse(list((root / "target/surefire-reports").glob("TEST-*.xml")))
+            prepare = [sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"),
+                       "--offline-first", "--test-runtime", "-o", *runtime[1:]]
+            run(prepare)
+            self.assertTrue(project_jar.is_file())
+            self.assertTrue(plugin_jar.is_file())
+            with unavailable_repository(root, settings) as (unavailable, requests):
+                for command in (prepare, runtime):
+                    for index, argument in enumerate(command[:-1]):
+                        if argument in ("-s", "-gs", "--settings"):
+                            command[index + 1] = unavailable
+                self.assertEqual(2, run(prepare).count("already available offline"))
+                run(runtime + ["-o", "surefire:test@integration-tests"])
+                self.assertEqual([], requests)
+            reports = list((root / "target/surefire-reports").glob("TEST-*.xml"))
+            self.assertEqual(2, len(reports))
+            for report in reports:
+                result = ET.parse(report).getroot()
+                self.assertEqual(("1", "0", "0", "0"),
+                                 tuple(result.get(key) for key in ("tests", "errors", "failures", "skipped")))
+
     def test_real_providers_start_offline_after_isolated_resolution(self):
         with tempfile.TemporaryDirectory() as directory:
             settings = str(fixture_settings(directory))
@@ -59,8 +162,8 @@ class TestRuntimePreparationTest(unittest.TestCase):
                             "-Dfixture.junit.version=" + cohort["junit"],
                             "-Dfixture.surefire.version=" + surefire]
 
-                    def run(command, succeeds=True):
-                        result = subprocess.run(command, capture_output=True, text=True, timeout=600)
+                    def run(command, succeeds=True, timeout=600):
+                        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
                         if succeeds:
                             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                         else:
@@ -97,6 +200,26 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                 "-Dartifact=org.apache.httpcomponents:httpclient:4.4.1",
                                 "-Dtransitive=true"])
                     run(base + ["-o", "surefire:test@integration-tests"])
+                    if line == "1.18":
+                        with unavailable_repository(root, settings) as (unavailable, requests):
+                            consumer = list(base)
+                            for flag in ("-s", "-gs"):
+                                consumer[consumer.index(flag) + 1] = unavailable
+                            consumer.extend(["-e", "-Dmaven.wagon.http.retryHandler.count=0",
+                                             "-Dmaven.wagon.rto=1000",
+                                             "-Daether.connector.http.retryHandler.count=0",
+                                             "-Daether.connector.http.retryHandler.interval=1",
+                                             "-Daether.transport.http.retryHandler.count=0",
+                                             "-Daether.transport.http.retryHandler.interval=1"])
+                            failure = run(consumer + ["surefire:test@integration-tests"],
+                                          succeeds=False, timeout=30)
+                            self.assertIn("ClasspathCache.setCachedClasspath", failure)
+                            self.assertTrue(requests, failure)
+                            attempted = len(requests)
+                            for report in (root / "target/surefire-reports").glob("TEST-*.xml"):
+                                report.unlink()
+                            run(consumer + ["-o", "surefire:test@integration-tests"], timeout=30)
+                            self.assertEqual(attempted, len(requests))
                     reports = list((root / "target/surefire-reports").glob("TEST-*.xml"))
                     self.assertEqual(2, len(reports))
                     for report in reports:
@@ -104,6 +227,32 @@ class TestRuntimePreparationTest(unittest.TestCase):
                         self.assertEqual("1", result.get("tests"))
                         self.assertEqual("0", result.get("errors"))
                         self.assertEqual("0", result.get("failures"))
+                        self.assertEqual("0", result.get("skipped"))
+
+    def test_every_shared_build_consumer_runs_offline_with_the_prepared_settings(self):
+        source = (ROOT / "dev/flink-suite/runner/execute.sh").read_text()
+        start = source.index("MAVEN_TEST_ARGS=(")
+        end = source.index('if [[ "${SUITE_MODE}" == "runtime" ||', start)
+        command = source[start:end] + '\nprintf "%s\\n" "${MAVEN_TEST_ARGS[@]}"'
+        for mode in ("runtime", "diagnostic", "state", "formats", "parquet", "orc",
+                     "kafka", "paimon", "delta"):
+            for reuse in ("true", "false"):
+                with self.subTest(mode=mode, reuse=reuse):
+                    result = subprocess.run(
+                        ["bash", "-u", "-c", command], capture_output=True, text=True,
+                        env={**os.environ, "SUITE_MODE": mode, "FLINK_SUITE_REUSE_COMMON_BUILD": reuse,
+                             "MAVEN_SETTINGS": "suite settings.xml", "SUITE_MAVEN_REPO": "suite m2",
+                             "TEST_MODULES": "upstream-module", "STREAMFUSION_CLASSPATH": "native.jar",
+                             "NATIVE_REPORT_ROOT": "native reports"},
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    arguments = result.stdout.splitlines()
+                    self.assertEqual(reuse == "true", "-o" in arguments)
+                    self.assertEqual(reuse == "true", "-gs" in arguments)
+                    if reuse == "true":
+                        self.assertEqual("suite settings.xml", arguments[arguments.index("-gs") + 1])
+                    self.assertIn("-Dmaven.repo.local=suite m2", arguments)
+                    self.assertIn("-Dmaven.test.failure.ignore=false", arguments)
 
     def test_each_line_prepares_its_own_runtime_and_preserves_download_failure(self):
         source = (RUNNER.parents[1] / "dev/flink-suite/runner/prepare.sh").read_text()
@@ -182,6 +331,8 @@ class TestRuntimePreparationTest(unittest.TestCase):
                                     "org.apache.httpcomponents:httpclient:4.4.1",
                                     "org.apache.paimon:paimon-vfs-hadoop:2.0.0",
                                     "org.apache.maven.plugins:maven-remote-resources-plugin:1.7.0",
+                                    "org.apache.maven.surefire:surefire-junit-platform:3.0.0-M5",
+                                    "org.junit.platform:junit-platform-launcher:1.8.1",
                                     "org.apache.maven.plugins:maven-enforcer-plugin:3.0.0-M1"]
                         if line == "2.2":
                             expected.extend(["org.apache.maven.surefire:surefire-junit-platform:3.2.5",

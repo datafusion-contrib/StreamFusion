@@ -75,6 +75,31 @@ are not retried. The lake matrix uses `fail-fast: false`, so one transport failu
 an unrelated module and force its complete rerun at the end of qualification. Cold producers may
 still encounter provider/shared-egress throttling; the cache prevents consumers amplifying it.
 
+Every upstream suite that reuses the common build runs its test invocation offline with the
+prepared user and global Maven settings, including Parquet, ORC, state and connector consumers.
+Surefire 3.0.0-M5 can query old test-dependency POMs while constructing its provider classpath
+even when the executable runtime is already cached. An unavailable repository can then leave
+an unresolved artifact and fail with `Artifact.getFile()` returning null before tests start.
+An isolated regression bounds retries for both Wagon and Resolver HTTP transports, reproduces
+that failure against a local HTTP 503 repository, then runs the same Jupiter and Vintage tests
+offline without another repository request. Before each shared consumer starts tests, a separate
+bounded dependency-only step resolves its exact mediated test classpath and the declared Surefire
+plugin's dependencies. It uses the consumer's wrapper, working directory, POM, profiles, version
+properties, isolated repository and settings, checking the cache offline before downloading missing
+artifacts. This also covers both generated Paimon 1.18 runtime POMs: compiling common tests against
+1.20 does not prepare their 1.18 runtime graph. Project dependencies and plugin dependencies resolve
+separately so plugin filters cannot omit required test artifacts. A preparation failure stops the
+consumer; test lifecycles remain offline and are never automatically retried. Dynamically selected
+Surefire providers and launchers are still prepared separately by the shared producer.
+Paimon 2.0/2.1 use Surefire 3.0.0-M5 and JUnit Platform 1.8.1 on both Flink lines; their
+provider/launcher graphs are prepared independently of Flink 2.2's newer runtime. Before
+compiling Paimon, bounded preparation loads its inherited Checkstyle plugin through that plugin's
+`help` goal with the selected reactor's actual release profile/properties. This uses Maven's plugin
+realm and custom dependencies; Maven still loads Checkstyle before honoring its skip flag. Unlike
+generic dependency-plugin resolution, it avoids the plugin's unmediated dependency graph and
+unrelated reporting/plugin-management entries. It runs no checks, resolves no unfinished reactor
+artifacts and never retries a build/test lifecycle.
+
 The legacy Delta host audit verifies its cached dependency graph and Surefire providers in
 offline mode before opening a connection to Maven Central. Shared upstream preparation uses
 the same cache check for test-runtime artifacts and includes the pinned Maven Enforcer plugin
@@ -87,12 +112,15 @@ The HTTP resolver keeps two retries per request and starts with a 15-second cool
 the server omits `Retry-After`, giving a throttled runner more time before resending.
 Legacy Delta runs its test lifecycle offline once the required artifacts are present.
 
-The JDK 17 dependency preparation also resolves the three runtime test fixture graphs and
+The JDK 17 dependency preparation also resolves the Flink, Kafka and Paimon runtime fixture graphs and
 the released Surefire providers and launchers they need. Each fixture still starts with an
 empty local repository, populated from a read-only file mirror of the prepared repository.
 It verifies that incomplete test runtime preparation fails offline, then resolves the missing
-provider artifacts and runs both original Jupiter and Vintage checks offline. CI runs that
-regression without making three sets of cold downloads from Maven Central.
+provider artifacts and runs both original Jupiter and Vintage checks offline. A second fixture
+reuses compiled tests with a different runtime POM/version, verifies missing project and Surefire
+plugin artifacts are restored, and runs both engines against an unavailable repository without
+issuing a request. CI runs those regressions from the prepared cache, avoiding repeated cold
+downloads from Maven Central.
 
 ## Canonical coverage budget and connector scheduling
 
@@ -196,6 +224,9 @@ JVM aggregate and nested-scalar benchmark workflows have been removed. Run these
 commits and intermediate pushes do not each need a matrix. Until older feature
 branches include this configuration, `[skip ci]` can suppress their push-triggered
 workflows; it does not suppress the lightweight `pull_request_target` reporter.
+
+The Paimon 1 workflow includes the shared append-routing StreamGraph regression, checking
+that routing inherits upstream parallelism while preserving configured writer counts.
 
 Use `--include docs.yml` or `--include paimon1.yml` for applicable checks in the same
 qualification. The launcher requires a clean committed worktree and the exact pushed PR head;

@@ -17,6 +17,19 @@ from dev.tools.ci import maven_cache as cache
 
 
 class MavenCacheTest(unittest.TestCase):
+    def test_plugin_help_prepares_only_the_plugin_realm_without_a_project_graph(self):
+        recipe = ["--pom", "fixture.xml", "--plugin-help",
+                  "org.apache.maven.plugins:maven-checkstyle-plugin"]
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            with patch.object(cache, 'recipes', return_value=[recipe]), \
+                    patch.object(cache.subprocess, 'run') as run, \
+                    patch.object(cache, 'complete_graph') as graph:
+                cache.prepare(repository, 'key', '17')
+            run.assert_called_once()
+            graph.assert_not_called()
+            self.assertTrue((repository / cache.MARKER).is_file())
+
     def test_mediated_graph_fills_missing_winners_and_classified_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

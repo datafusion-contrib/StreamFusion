@@ -14,6 +14,13 @@
     "original_opentest": "1.1.1"
   },
   {
+    "line": "paimon-2",
+    "surefire": "3.0.0-M5",
+    "junit": "5.8.1",
+    "platform": "1.8.1",
+    "original_opentest": "1.1.1"
+  },
+  {
     "line": "kafka-5.0",
     "surefire": "3.2.5",
     "junit": "5.13.3",

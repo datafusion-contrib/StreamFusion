@@ -1,5 +1,28 @@
 #!/usr/bin/env bash
 
+prepare_test_runtime() {
+  if [[ "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" != "true" ]]; then
+    return 0
+  fi
+  local wrapper_root="${PWD}" maven=mvn
+  if [[ "${SUITE_MODE}" != "paimon" && "${SUITE_MODE}" != "delta" ]]; then
+    wrapper_root="${FLINK_ROOT}"
+    maven=./mvnw
+    if [[ "${SUITE_MODE}" == "kafka" && -x "${KAFKA_CONNECTOR_ROOT}/mvnw" ]]; then
+      wrapper_root="${KAFKA_CONNECTOR_ROOT}"
+    fi
+  fi
+  echo "Preparing the exact ${SUITE_MODE} test classpath and Surefire plugin before offline execution..."
+  (
+    cd "${wrapper_root}" || exit $?
+    if [[ "${maven}" == ./mvnw ]]; then
+      export MAVEN_USER_HOME="${SUITE_MAVEN_USER_HOME}"
+    fi
+    python3 "${REPO_ROOT}/bin/ci-maven-dependencies.py" \
+      --maven "${maven}" --offline-first --test-runtime "$@"
+  )
+}
+
 if [[ -n "${FLINK_SUITE_SHARD:-}" ]]; then
   shard_selector="$(python3 "${REPO_ROOT}/dev/flink-suite/runtime_shards.py" select \
     --plan "${SUITE_ROOT}/runtime-shards.json" --shard "${FLINK_SUITE_SHARD}")" || exit $?
@@ -76,7 +99,7 @@ MAVEN_TEST_ARGS=(
   -Dflink.forkCountUnitTest="${FLINK_SUITE_UNIT_FORKS:-2}" \
   -Dflink.forkCountITCase="${FLINK_SUITE_IT_FORKS:-1}"
 )
-if [[ "${SUITE_MODE}" == "runtime" && "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" == "true" ]]; then
+if [[ "${FLINK_SUITE_REUSE_COMMON_BUILD:-false}" == "true" ]]; then
   MAVEN_TEST_ARGS+=(-o -gs "${MAVEN_SETTINGS}")
 fi
 if [[ "${SUITE_MODE}" == "runtime" || "${SUITE_MODE}" == "diagnostic" ]]; then
@@ -141,6 +164,11 @@ if [[ ${#TEST_SELECTOR_ARGS[@]} -gt 0 ]]; then
     MAVEN_TEST_ARGS+=("-Dsurefire.failIfNoSpecifiedTests=false")
   fi
 fi
+if [[ "${SUITE_MODE}" == "kafka" || "${SUITE_MODE}" == "paimon" || "${SUITE_MODE}" == "delta" ]]; then
+  prepare_test_runtime "${MAVEN_TEST_ARGS[@]}" || exit $?
+else
+  prepare_test_runtime ${FLINK_TARGET_PROFILE:+-P${FLINK_TARGET_PROFILE}} "${MAVEN_TEST_ARGS[@]}" || exit $?
+fi
 MAVEN_TEST_ARGS+=("${TEST_GOAL}")
 if [[ "${SUITE_MODE}" == "kafka" ]]; then
   kafka_mvn "${MAVEN_TEST_ARGS[@]}"
@@ -170,6 +198,7 @@ elif [[ "${SUITE_MODE}" == "paimon" ]]; then
         -Dsurefire.failIfNoSpecifiedTests=*) line_args[index]=-Dsurefire.failIfNoSpecifiedTests=true ;;
       esac
     done
+    prepare_test_runtime "${line_args[@]:0:${#line_args[@]}-1}" || exit $?
     mvn "${line_args[@]}"
     line_status=$?
     line_summary=("${line_reports}" --contracts "${CONTRACT_FILE}" --process-exit "${line_status}"

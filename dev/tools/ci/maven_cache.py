@@ -53,6 +53,9 @@ def recipes(jdk):
                 "org.junit.platform:junit-platform-launcher:" + cohort["platform"],
             ))
         fixture_artifacts.add("org.apache.httpcomponents:httpclient:4.4.1")
+        result.append(["--pom", (runtime_fixture / "checkstyle-pom.xml").as_posix(),
+                       "--plugin-help", "org.apache.maven.plugins:maven-checkstyle-plugin",
+                       "--offline-first", "--define", "checkstyle.skip=true"])
         result.append(["--offline-first", *[option for artifact in sorted(fixture_artifacts)
                                              for option in ("--artifact", artifact)]])
         result.extend([
@@ -138,7 +141,7 @@ def prepare(repository, key, jdk):
     for recipe in recipes(jdk):
         subprocess.run([sys.executable, str(ROOT / "bin/ci-maven-dependencies.py"),
                         "--repository", str(repository), *recipe], cwd=ROOT, check=True)
-        if not {"--artifact", "--resolve-project"} & set(recipe):
+        if not {"--artifact", "--resolve-project", "--plugin-help"} & set(recipe):
             complete_graph(repository, recipe)
     marker.write_text(json.dumps(metadata(key, jdk), indent=2) + "\n")
 

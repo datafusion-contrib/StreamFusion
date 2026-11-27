@@ -130,6 +130,60 @@ class MavenDependenciesTest(unittest.TestCase):
         self.assertEqual(["-Dflink.version=2.2.0", "-Ddelta.version=4.4.0",
                           PREPARE.GOAL, PREPARE.PROJECT_GOAL], run.call_args.args[0][-4:])
 
+    def test_consumer_runtime_resolves_the_exact_model_and_plugin_in_separate_steps(self):
+        options = self.options()
+        options.test_runtime = ["-B", "-ntp", "-e", "-o", "-s", "user settings.xml",
+                                "-gs", "global settings.xml", "-f", "generated runtime/pom.xml",
+                                "-pl", ":common", "-Pflink1", "-Dflink.version=1.20.1",
+                                "-Dflink.version=1.18.1", "-Dmaven.repo.local=isolated m2",
+                                "-Dtest=UnchangedITCase", "-Dmaven.test.failure.ignore=false"]
+        options.offline_first = True
+        with patch.object(PREPARE.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertEqual(0, PREPARE.resolve(options))
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(2, len(commands))
+        expected = [arg for arg in options.test_runtime if arg != "-o"]
+        for command, goal_count in zip(commands, (1, 3)):
+            self.assertEqual("-o", command[1])
+            self.assertEqual(1, command.count("-o"))
+            for flag in ("-s", "-gs"):
+                self.assertEqual(1, command.count(flag))
+            self.assertEqual(expected, command[-len(expected) - goal_count:-goal_count])
+            self.assertFalse({"test", "verify", "package", "install", PREPARE.GOAL} & set(command))
+        self.assertEqual(PREPARE.PROJECT_GOAL, commands[0][-1])
+        self.assertFalse(any("includeArtifactIds" in arg for arg in commands[0]))
+        self.assertEqual([PREPARE.PLUGIN_GOAL, "-DincludeGroupIds=org.apache.maven.plugins",
+                          "-DincludeArtifactIds=maven-surefire-plugin"], commands[1][-3:])
+
+    def test_consumer_runtime_retries_only_dependency_resolution_and_keeps_failure_blocking(self):
+        options = self.options()
+        options.test_runtime = ["-o", "-f", "runtime.xml"]
+        options.offline_first = True
+        for statuses, expected in (((1, 7, 7, 7), 7), ((0, 1, 7, 7, 7), 7), ((0, 1, 7, 0), 0)):
+            with self.subTest(statuses=statuses), \
+                    patch.object(PREPARE.subprocess, "run", side_effect=[
+                        subprocess.CompletedProcess([], status) for status in statuses]) as run, \
+                    patch.object(PREPARE.time, "sleep"):
+                self.assertEqual(expected, PREPARE.resolve(options))
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertEqual(len(statuses), len(commands))
+                self.assertEqual(1 if statuses[0] == 0 else 4,
+                                 sum(PREPARE.PROJECT_GOAL in command for command in commands))
+                for command in commands:
+                    self.assertFalse({"test", "verify", "install"} & set(command))
+                    if "-U" in command:
+                        self.assertNotIn("-o", command)
+
+    def test_consumer_runtime_rejects_lifecycles_and_unbounded_maven_options(self):
+        for arguments in (["test"], ["surefire:test@integration-tests"], ["-f"], ["-pl", "-o"],
+                          ["--fail-never"], ["-U"], ["org.example:plugin:1:goal"]):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    ["python3", str(ROOT / "bin/ci-maven-dependencies.py"), "--test-runtime", *arguments],
+                    capture_output=True, text=True)
+                self.assertEqual(2, result.returncode)
+                self.assertRegex(result.stderr, "Not a Maven test-runtime model option|Missing value")
+
     def test_project_models_retry_without_building_or_resolving_reactor_artifacts(self):
         options = self.options()
         options.model_only = True
@@ -145,6 +199,34 @@ class MavenDependenciesTest(unittest.TestCase):
         self.assertIn("-am", command)
         self.assertNotIn(PREPARE.GOAL, command)
         self.assertFalse({"test", "verify", "package", "install"} & set(command))
+
+    def test_reactor_plugin_preparation_avoids_unfinished_project_dependencies(self):
+        options = self.options()
+        options.plugin_help = ["org.apache.maven.plugins:maven-checkstyle-plugin"]
+        options.offline_first = True
+        options.define = ["checkstyle.skip=true", "test.flink.version=1.18.1"]
+        with patch.object(PREPARE.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertEqual(0, PREPARE.resolve(options))
+        command = run.call_args.args[0]
+        self.assertEqual("org.apache.maven.plugins:maven-checkstyle-plugin:help", command[-1])
+        self.assertNotIn(PREPARE.PLUGIN_GOAL, command)
+        self.assertIn("-pl", command)
+        self.assertIn("-am", command)
+        self.assertIn("-Pflink-1.18", command)
+        self.assertIn("-Dcheckstyle.skip=true", command)
+        self.assertNotIn(PREPARE.PROJECT_GOAL, command)
+        self.assertNotIn(PREPARE.GOAL, command)
+        self.assertFalse({"test", "verify", "package", "install", "validate"} & set(command))
+
+    def test_plugin_preparation_rejects_coordinates_with_executable_goals(self):
+        for plugin in ("org.example:plugin:test", "org.example:plugin:1:verify", "-Dtest.skip=true"):
+            with self.subTest(plugin=plugin):
+                options = self.options()
+                options.plugin_help = [plugin]
+                with patch.object(PREPARE.subprocess, "run") as run, \
+                        self.assertRaisesRegex(ValueError, "GROUP_ID:ARTIFACT_ID"):
+                    PREPARE.resolve(options)
+                run.assert_not_called()
 
     def test_missing_download_is_rechecked_and_can_recover(self):
         status, calls, sleeps = self.invoke([1, 1, 0])
