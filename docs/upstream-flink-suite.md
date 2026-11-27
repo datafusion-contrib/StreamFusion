@@ -181,6 +181,8 @@ operators are also listed in the runtime-route classifier, which still requires 
 nonempty work from successful jobs.
 The agent records the JVM aggregate and table-function operators after successful Arrow-batch
 consumption, using the same consumed-row recorder as the other columnar operators.
+The synchronous built-in string variant also requires completed Arrow-batch work from its own
+operator class for runtime-route classification.
 
 The unchanged Table API `OverAggregateITCase` methods containing admitted scalar JVM
 aggregates require consumed `NativeColumnarJvmOverOperator` input. Constants, shared
