@@ -259,7 +259,8 @@ public final class NativePaimonSinkExecNode extends ExecNodeBase<Object>
                 .name("Strip Channel")
                 .setParallelism(writerParallelism);
       }
-      if (table.coreOptions().partitionSinkStrategy() == PartitionSinkStrategy.NONE) {
+      if (table.coreOptions().partitionSinkStrategy() == PartitionSinkStrategy.NONE
+          && writerParallelism != routed.getParallelism()) {
         var assigned =
             routed
                 .transform(

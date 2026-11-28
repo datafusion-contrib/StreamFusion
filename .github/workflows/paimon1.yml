@@ -21,13 +21,16 @@ on:
       - 'native/engine/src/keyed_upsert/**'
       - 'native/bridge/**'
       - 'bin/ci-free-disk.py'
+      - 'bin/ci-maven-dependencies.py'
       - 'bin/paimon1-suite.sh'
       - 'bin/paimon-compaction-suite.py'
       - 'dev/tools/suites/paimon_compaction.py'
       - 'dev/tools/ci/free_disk.py'
+      - 'dev/tools/ci/maven_dependencies.py'
       - 'dev/tools/checks/native_workspace.py'
       - 'dev/flink-suite/paimon-compaction*'
       - 'dev/tools/tests/test_paimon1_ci.py'
+      - 'dev/tools/tests/test_paimon1_dependency_setup.py'
       - 'pom.xml'
       - '.github/workflows/paimon1.yml'
 
@@ -52,6 +55,13 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
+      - name: Check dependency failure stops before native compilation
+        run: python3 -m unittest discover -s dev/tools/tests -p test_paimon1_dependency_setup.py
+      - name: Prepare legacy Maven dependencies before native compilation
+        run: >-
+          python3 bin/ci-maven-dependencies.py
+          --profile flink-1.18,paimon1,bench,tpcds
+          --projects streamfusion-paimon1 --also-make
       - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
         with:
@@ -67,7 +77,7 @@ jobs:
         run: >-
           mvn -B -ntp -Pflink-1.18,paimon1,bench -pl streamfusion-paimon1 -am
           -Dnative.build.skip=true
-          -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonAppendRoutingPlanTest,PaimonSourceSqlTest,PaimonSplitWatermarksTest,PaimonFetcherLifecycleTest,PaimonCompaction*Test,PaimonMaintenanceTest,PaimonBatchSqlTest,PaimonBatchEncodingTest'
+          -Dsf.testForks=1 '-Dtest=LegacyPaimon*Test,PaimonAppendRouting*Test,PaimonSourceSqlTest,PaimonSplitWatermarksTest,PaimonFetcherLifecycleTest,PaimonCompaction*Test,PaimonMaintenanceTest,PaimonBatchSqlTest,PaimonBatchEncodingTest'
           -Dsurefire.failIfNoSpecifiedTests=false '-Dsf.extraJvmArgs=-Xmx2g -XX:ActiveProcessorCount=2 --add-opens=java.base/java.math=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED' test
       - name: Verify upstream fork isolation offline
         env:
